@@ -8,15 +8,15 @@
 
 ---
 
-## ✨ Features
+##  Features
 
-- **🚀 Instant Explanations**: Hover or click any line of code to see what it *actually* does.
-- **🤖 Gemini AI Integration**: A built-in coding assistant that strictly answers C++ queries (and politely declines to talk about the weather).
-- **⚡ Real-Time Execution**: Run your code instantly with live stdout/stderr streaming via WebSockets.
-- **🎨 Modern UI**: A beautiful, dark-themed coding environment built with the latest web technologies.
-- **🛡️ Beginner Mode**: Toggles simplified explanations for those just starting out.
+- ** Instant Explanations**: Hover or click any line of code to see what it *actually* does.
+- ** Gemini AI Integration**: A built-in coding assistant that strictly answers C++ queries (and politely declines to talk about the weather).
+- ** Real-Time Execution**: Run your code instantly with live stdout/stderr streaming via WebSockets.
+- ** Modern UI**: A beautiful, dark-themed coding environment built with the latest web technologies.
+- ** Beginner Mode**: Toggles simplified explanations for those just starting out.
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Component | Tech | Description |
 | :--- | :--- | :--- |
@@ -42,7 +42,7 @@
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 1.  **Clone the Repository**
     ```bash
