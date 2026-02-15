@@ -36,8 +36,13 @@ function setupEventListeners() {
 
     // Code textarea
     const codeTextarea = document.getElementById('codeTextarea');
-    codeTextarea.addEventListener('input', updateLineNumbers);
+    codeTextarea.addEventListener('input', () => {
+        updateLineNumbers();
+        handleCursorMove(); // Explain on type
+    });
     codeTextarea.addEventListener('scroll', syncLineNumbersScroll);
+    codeTextarea.addEventListener('click', handleCursorMove); // Explain on click
+    codeTextarea.addEventListener('keyup', handleCursorMove); // Explain on arrow keys
 
     // AI Chatbox
     document.getElementById('chatboxHeader').addEventListener('click', toggleChatbox);
@@ -166,61 +171,95 @@ function sendConsoleInput() {
 
 // Explanation functions...
 
+// Helper to get current line number
+function getCursorLineNumber(textarea) {
+    const value = textarea.value;
+    const selectionStart = textarea.selectionStart;
+    const lines = value.substr(0, selectionStart).split("\n");
+    return lines.length; // 1-indexed
+}
+
+let activeLineTimeout = null;
+let lastExplainedLine = -1;
+
 async function handleLineExplain() {
+    // Just toggle the mode
     explanationMode = 'line';
     updateExplanationPanel();
 
+    // Add listeners if not already added (check with flag or just add)
+    // For simplicity, we'll ensure they are bound. 
+    // Ideally we bind them once in setup, but we only want them active in this mode.
+    // Let's add them to setupEventListeners but check the mode inside the handler.
+
+    // Trigger initial explanation for current cursor position
+    handleCursorMove();
+
+    showToast('Interactive Mode', 'Click or type on any line to explain it!');
+}
+
+async function handleCursorMove() {
+    if (explanationMode !== 'line') return;
+
+    const textarea = document.getElementById('codeTextarea');
     const container = document.getElementById('lineExplanations');
-    const code = document.getElementById('codeTextarea').value;
-    const lines = code.split('\n');
+    const currentLineNum = getCursorLineNumber(textarea);
 
-    container.innerHTML = '<div style="padding: 20px; text-align: center;">Analyzing code with AI... <span class="loading-spinner">Analyzing...</span></div>';
-    showToast('Analyzing', 'Getting line-by-line explanations...');
+    // Clear debounce timer
+    if (activeLineTimeout) clearTimeout(activeLineTimeout);
 
-    let explanationsHtml = '';
+    // Get content of current line
+    const lines = textarea.value.split('\n');
+    const lineContent = lines[currentLineNum - 1]?.trim();
 
-    // Process unique non-empty lines to avoid too many requests
-    // For a smoother demo, we'll explain non-empty lines
+    // Don't re-explain if we're on the same line and content hasn't changed meaningfully
+    // Actually, we WANT to re-explain if they type more (e.g. "int" -> "Variable", "int a" -> "Variable named a")
+    // So we just rely on debounce.
 
-    try {
-        for (let i = 0; i < lines.length; i++) {
-            const lineContent = lines[i].trim();
-            if (!lineContent || lineContent.startsWith('//')) continue;
+    lastExplainedLine = currentLineNum; // Keep track but don't block
 
-            // Call backend for this line
+
+    if (!lineContent || lineContent.startsWith('//') || lineContent.length < 2) {
+        container.innerHTML = `<div style="padding: 20px; color: #888; text-align: center;">Waiting for code on line ${currentLineNum}...</div>`;
+        return;
+    }
+
+    // Debounce: Wait 300ms after last move/type
+    activeLineTimeout = setTimeout(async () => {
+        container.innerHTML = `<div style="padding: 20px; text-align: center;"><span class="loading-spinner">Analyzing Line ${currentLineNum}...</span></div>`;
+
+        try {
             const response = await fetch('http://localhost:8000/explain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ line: lineContent })
             });
-
             const data = await response.json();
 
-            // Only show if it returned a meaningful explanation (not default fallback)
-            // But logic.py fallback is "I'm watching...", which we might display or filter.
-            // Let's display everything for now.
+            // Escape HTML in the explanation so <iostream> doesn't vanish
+            const safeExplanation = data.explanation
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;")
+                .replace(/\n/g, "<br>");
 
-            explanationsHtml += `
-            <div class="line-explanation">
-                <div class="line-explanation-header">
-                    <span class="line-badge">Line ${i + 1}</span>
-                    <code class="line-code">${lineContent.substring(0, 40)}${lineContent.length > 40 ? '...' : ''}</code>
-                </div>
-                <div class="line-explanation-content">
-                    ${data.explanation}
-                </div>
-            </div>`;
+            container.innerHTML = `
+                <div class="line-explanation" style="border-left: 4px solid var(--accent-color); animation: fadeIn 0.3s ease;">
+                    <div class="line-explanation-header">
+                        <span class="line-badge">Line ${currentLineNum}</span>
+                        <code class="line-code">${lineContent.substring(0, 40)}${lineContent.length > 40 ? '...' : ''}</code>
+                    </div>
+                    <div class="line-explanation-content" style="font-size: 1.1rem; line-height: 1.6;">
+                        ${safeExplanation}
+                    </div>
+                </div>`;
+
+        } catch (error) {
+            container.innerHTML = `<div style="color: red; padding: 20px;">Error: ${error.message}</div>`;
         }
-
-        if (explanationsHtml === '') {
-            container.innerHTML = '<div style="padding: 20px; text-align: center;">No explainable code found. Write some C++!</div>';
-        } else {
-            container.innerHTML = explanationsHtml;
-        }
-
-    } catch (error) {
-        container.innerHTML = `<div style="color: red; padding: 20px;">Error getting explanations: ${error.message}. Is the server running?</div>`;
-    }
+    }, 300);
 }
 
 function handleFullExplain() {
@@ -424,7 +463,7 @@ function toggleChatbox() {
     }
 }
 
-function sendMessage() {
+async function sendMessage() {
     const input = document.getElementById('chatInput');
     const message = input.value.trim();
 
@@ -434,24 +473,61 @@ function sendMessage() {
     addChatMessage(message, 'user');
     input.value = '';
 
-    // Simulate AI response
-    setTimeout(() => {
-        const responses = [
-            "I can help explain that part of your C++ code! Which specific line would you like me to break down?",
-            "That's a great question about the Fibonacci algorithm. The recursive approach you're using is elegant but has exponential time complexity.",
-            "I notice your code uses recursion. Would you like me to explain how the function calls itself, or show you an iterative alternative?",
-            "The iostream header you included gives you access to cout and cin for input/output operations. Would you like to know more about C++ headers?"
-        ];
+    // Send to Backend AI
+    addChatMessage('<span class="loading-spinner">Thinking...</span>', 'ai', 'loading-msg');
 
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        addChatMessage(randomResponse, 'ai');
-    }, 1000);
+    try {
+        const response = await fetch('http://localhost:8000/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message })
+        });
+
+        const data = await response.json();
+
+        // Remove loading message
+        const loadingMsg = document.getElementById('loading-msg');
+        if (loadingMsg) loadingMsg.remove();
+
+        addChatMessage(data.response, 'ai');
+
+    } catch (e) {
+        const loadingMsg = document.getElementById('loading-msg');
+        if (loadingMsg) loadingMsg.remove();
+        addChatMessage("Error connecting to AI: " + e.message, 'ai');
+    }
 }
 
-function addChatMessage(message, sender) {
+async function loadStarterCode(type) {
+    showToast('Loading', 'Fetching starter code...');
+    try {
+        const response = await fetch(`http://localhost:8000/starter-code/${type}`);
+        const data = await response.json();
+
+        const textarea = document.getElementById('codeTextarea');
+        textarea.value = data.code;
+        updateLineNumbers();
+
+        // Trigger explanation update if in line mode
+        if (explanationMode === 'line') {
+            handleCursorMove();
+        }
+
+        showToast('Loaded', 'Starter code inserted!');
+
+        // Close chat if it's open covering the code? Optional.
+        // if(isChatboxExpanded && window.innerWidth < 800) toggleChatbox();
+
+    } catch (e) {
+        showToast('Error', 'Failed to load starter code');
+    }
+}
+
+function addChatMessage(message, sender, id = null) {
     const messagesContainer = document.getElementById('chatMessages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${sender}-message`;
+    if (id) messageDiv.id = id;
 
     const avatarIcon = sender === 'ai' ? 'bot' : 'user';
 

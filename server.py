@@ -7,9 +7,13 @@ import uuid
 import asyncio
 import threading
 from logic import SenseiLogic
+from ai_logic import GeminiAssistant
+from pydantic import BaseModel
+import os
 
 app = FastAPI()
 sensei = SenseiLogic() 
+ai_assistant = GeminiAssistant()
 
 # Enable CORS
 app.add_middleware(
@@ -23,10 +27,23 @@ app.add_middleware(
 class ExplanationRequest(BaseModel):
     line: str
 
+class ChatRequest(BaseModel):
+    message: str
+
 @app.post("/explain")
 async def explain_line(req: ExplanationRequest):
     explanation = sensei.explain_line(req.line)
     return {"explanation": explanation}
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    response = ai_assistant.chat(req.message)
+    return {"response": response}
+
+@app.get("/starter-code/{type_key}")
+async def get_starter_code(type_key: str):
+    code = ai_assistant.get_starter_code(type_key)
+    return {"code": code}
 
 @app.websocket("/ws/run")
 async def websocket_endpoint(websocket: WebSocket):
@@ -47,12 +64,20 @@ async def websocket_endpoint(websocket: WebSocket):
     exe_file = f"temp_{file_id}.exe"
     
     try:
-        with open(src_file, "w") as f:
+        # Use encoding='utf-8' to handle emojis in source code
+        with open(src_file, "w", encoding="utf-8") as f:
             f.write(code)
             
         await websocket.send_text("Compiling...\n")
         
-        comp = subprocess.run(['g++', src_file, '-o', exe_file], capture_output=True, text=True)
+        # Also use utf-8 for compilation output capturing
+        comp = subprocess.run(
+            ['g++', src_file, '-o', exe_file], 
+            capture_output=True, 
+            text=True, 
+            encoding='utf-8', 
+            errors='replace'
+        )
         
         if comp.returncode != 0:
             await websocket.send_text("Compilation Error:\n" + comp.stderr)
@@ -68,6 +93,8 @@ async def websocket_endpoint(websocket: WebSocket):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding='utf-8',       # FORCE UTF-8
+            errors='replace',       # Prevent crashes on bad chars
             bufsize=0 # Unbuffered
         )
         
