@@ -4,26 +4,29 @@
 
 > **"Master C++ one line at a time."**
 
-**Cpp-Sensei** is a modern, interactive IDE customized for learning C++ programming. Unlike standard text editors, Sensei watches your keystrokes and provides real-time, context-aware explanations using AI and static analysis. It's designed to help beginners bridge the gap between "Hello World" and actual software engineering.
+**Cpp-Sensei** is a modern, interactive desktop IDE customized for learning C++ programming. Built with Electron compatibility in mind, Sensei integrates the professional Microsoft Monaco Editor with customized C++ autocomplete engines, instant line-by-line static explanations, and a Gemini AI coding assistant. It is designed to help beginners bridge the gap between "Hello World" and actual software engineering.
 
 ---
 
-##  Features
+## 🌟 Features
 
-- ** Instant Explanations**: Hover or click any line of code to see what it *actually* does.
-- ** Gemini AI Integration**: A built-in coding assistant that strictly answers C++ queries (and politely declines to talk about the weather).
-- ** Real-Time Execution**: Run your code instantly with live stdout/stderr streaming via WebSockets.
-- ** Modern UI**: A beautiful, dark-themed coding environment built with the latest web technologies.
-- ** Beginner Mode**: Toggles simplified explanations for those just starting out.
+- **💻 Monaco Editor Integration**: Features a customized, premium electric indigo theme (`sensei-theme`) with professional-grade syntax highlighting, line numbers, automatic brace closing, and scroll behaviors.
+- **💡 Context-Aware Autocomplete**: Custom autocomplete suggestions for C++ keywords, STL classes (`cout`, `cin`, `vector`, `endl`), `#include` standard headers, and `std::` namespaces.
+- **🎯 Compact Onboarding Empty-State**: A distraction-free welcome overlay displaying a responsive template grid of 10 beginner C++ code snippets (loops, arrays, star patterns, calculators) designed to fit on a single screen without vertical scrolling.
+- **📟 Smooth Terminal Management**: The bottom terminal remains collapsed/hidden by default to maximize editor focus. It slides open smoothly on code execution and includes lag-free drag-resize animation logic.
+- **🔍 Instant Explanations**: Click any line of code to see what it *actually* does under the hood using regex-based static analysis.
+- **🤖 Gemini AI Integration**: A built-in coding chatbot that helps debug compiler errors, optimize loops, and answer C++ technical questions.
+- **📂 Workspace File Explorer**: Left sidebar featuring an interactive folder picker, collapsible tree nodes, and file management controls.
 
-##  Tech Stack
+## 🛠️ Tech Stack
 
 | Component | Tech | Description |
 | :--- | :--- | :--- |
 | **Backend** | ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi) | High-performance async Python server |
-| **Frontend** | ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black) | Vanilla JS + HTML5 for a lightweight, reactive UI |
+| **Frontend** | ![Monaco](https://img.shields.io/badge/Monaco%20Editor-007acc?style=flat&logo=visualstudiocode) | Microsoft Monaco Editor (loaded via CDN) |
+| **Styling** | ![CSS](https://img.shields.io/badge/Vanilla%20CSS-1572B6?style=flat&logo=css3) | Tailored HSL color palette and smooth layout transitions |
 | **AI Engine** | ![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=flat&logo=googlebard&logoColor=white) | Generative AI for code assistance |
-| **Compiler** | ![GCC](https://img.shields.io/badge/GCC-000000?style=flat&logo=gnu&logoColor=white) | Real `g++` compilation under the hood |
+| **Compiler** | ![GCC](https://img.shields.io/badge/GCC-000000?style=flat&logo=gnu&logoColor=white) | Local `g++` compilation under the hood |
 
 ---
 
@@ -38,15 +41,15 @@
 > *   Malicious code (e.g., `system("rm -rf /")`) *will* be executed if you type it!
 
 > [!CAUTION]
-> **AI Usage**: The AI assistant uses your API Key. Be mindful of usage limits and do not commit your `ai_logic.py` with the hardcoded API key to a public repository!
+> **AI Usage**: The AI assistant uses your Gemini API Key. Be mindful of usage limits and do not commit your `ai_logic.py` with a hardcoded API key to a public repository!
 
 ---
 
-##  Getting Started
+## 🚀 Getting Started
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/yourusername/Cpp-Sensei.git
+    git clone https://github.com/paritosh-py/Cpp-Sensei.git
     cd Cpp-Sensei
     ```
 
@@ -60,8 +63,8 @@
     python server.py
     ```
 
-4.  **Code!**
-    Open `http://localhost:8000` (or open `index.html` directly if configured) and start coding!
+4.  **Open the IDE**
+    Open `index.html` directly in a browser (or via local file system) and connect to the local server.
 
 ---
 
@@ -69,12 +72,13 @@
 
 ```bash
 Cpp-Sensei/
-├── 📄 server.py        # Main FastAPI application & WebSocket handler
+├── 📄 index.html       # Main IDE UI Layout
+├── 📄 server.py        # Main FastAPI application & WebSocket run handler
 ├── 📄 logic.py         # Static analysis engine (Regex-based explanations)
 ├── 📄 ai_logic.py      # Google Gemini integration layer
 ├── 📂 public/          # Frontend assets
-│   ├── index.html      # Main IDE Interface
-│   └── script.js       # Client-side logic
+│   ├── script.js       # Client-side logic & Monaco autocomplete providers
+│   └── styles.css      # Custom stylesheet (indigo dark theme & layout)
 └── 📂 assets/          # Project images and resources
 ```
 
