@@ -298,6 +298,9 @@ int main() {
                         AI Assistant
                     </div>
                     <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="clearChat" title="Clear Chat">
+                            <i data-lucide="trash-2"></i>
+                        </button>
                         <button class="panel-action-btn" id="closeAIPanel" title="Close">
                             <i data-lucide="x"></i>
                         </button>
@@ -316,12 +319,11 @@ int main() {
                 </div>
 
                 <div class="chat-suggestions">
-                    <button class="suggestion-chip" data-action="step-by-step">Explain step by step</button>
-                    <button class="suggestion-chip" data-action="optimize">Optimize code</button>
-                    <button class="suggestion-chip" data-action="find-errors">Find errors</button>
-                    <button class="suggestion-chip" data-action="starter-io">Basic I/O</button>
-                    <button class="suggestion-chip" data-action="starter-array">Arrays</button>
-                    <button class="suggestion-chip" data-action="starter-string">Strings</button>
+                    <button class="suggestion-chip" data-action="explain-code">Explain my code</button>
+                    <button class="suggestion-chip" data-action="find-errors">Find bugs</button>
+                    <button class="suggestion-chip" data-action="optimize">Optimize</button>
+                    <button class="suggestion-chip" data-action="fix-errors">Fix errors</button>
+                    <button class="suggestion-chip" data-action="what-does">What does this do?</button>
                 </div>
 
                 <div class="chat-input-area">

@@ -787,10 +787,12 @@ async function sendMessage() {
     addChatMessage(null, 'ai', loadingId, true);
 
     try {
+        // Attach current editor code as context
+        const codeContext = getEditorCode();
         const response = await fetch('http://localhost:8000/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: message })
+            body: JSON.stringify({ message: message, code_context: codeContext })
         });
         const data = await response.json();
 
@@ -806,10 +808,10 @@ async function sendMessage() {
     }
 }
 
-function addChatMessage(content, sender, id = null, isLoading = false) {
+function addChatMessage(content, sender, id = null, isLoading = false, isDiagnosis = false) {
     const container = document.getElementById('chatMessages');
     const msgDiv = document.createElement('div');
-    msgDiv.className = `chat-message ${sender}-message`;
+    msgDiv.className = `chat-message ${sender}-message${isDiagnosis ? ' diagnosis-message' : ''}`;
     if (id) msgDiv.id = id;
 
     const avatarIcon = sender === 'ai' ? 'bot' : 'user';
@@ -818,13 +820,17 @@ function addChatMessage(content, sender, id = null, isLoading = false) {
         msgDiv.innerHTML = `
             <div class="message-avatar"><i data-lucide="${avatarIcon}"></i></div>
             <div class="message-content">
-                <div class="message-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+                <div class="message-thinking">
+                    <div class="message-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+                    <span class="thinking-label">Sensei is thinking...</span>
+                </div>
             </div>`;
     } else {
         const rendered = sender === 'ai' ? renderMarkdown(content) : `<p>${escapeHtml(content)}</p>`;
+        const diagnosisHeader = isDiagnosis ? `<div class="diagnosis-badge"><i data-lucide="alert-triangle"></i> Error Diagnosis</div>` : '';
         msgDiv.innerHTML = `
             <div class="message-avatar"><i data-lucide="${avatarIcon}"></i></div>
-            <div class="message-content">${rendered}</div>`;
+            <div class="message-content">${diagnosisHeader}${rendered}</div>`;
     }
 
     container.appendChild(msgDiv);
@@ -838,13 +844,29 @@ function renderMarkdown(text) {
     // Escape HTML first
     let html = escapeHtml(text);
 
-    // Code blocks (```...```)
+    // Code blocks (```lang\n...```) — render with header bar
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-        return `<pre><code>${code.trim()}</code><button class="copy-code-btn" onclick="copyCodeBlock(this)">Copy</button></pre>`;
+        const langLabel = lang || 'code';
+        const trimmedCode = code.trim();
+        const escapedCode = trimmedCode;
+        return `<div class="code-block-wrapper">
+            <div class="code-block-header">
+                <span class="code-lang-label">${langLabel}</span>
+                <div class="code-block-actions">
+                    <button class="code-action-btn" onclick="copyCodeBlock(this)" title="Copy"><i data-lucide="copy"></i> Copy</button>
+                    <button class="code-action-btn insert-btn" onclick="insertCodeBlock(this)" title="Insert into editor"><i data-lucide="file-input"></i> Insert</button>
+                </div>
+            </div>
+            <pre><code>${escapedCode}</code></pre>
+        </div>`;
     });
 
     // Inline code
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Headings (### → h4, ## → h3)
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
 
     // Bold
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -852,18 +874,27 @@ function renderMarkdown(text) {
     // Italic
     html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
-    // Lists
-    html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    // Unordered lists — collect consecutive list items
+    html = html.replace(/(^\s*[-*]\s+.+$\n?)+/gm, (block) => {
+        const items = block.trim().split('\n').map(line => {
+            return '<li>' + line.replace(/^\s*[-*]\s+/, '') + '</li>';
+        }).join('');
+        return '<ul>' + items + '</ul>';
+    });
 
-    // Numbered lists
-    html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    // Numbered lists — collect consecutive numbered items
+    html = html.replace(/(^\s*\d+\.\s+.+$\n?)+/gm, (block) => {
+        const items = block.trim().split('\n').map(line => {
+            return '<li>' + line.replace(/^\s*\d+\.\s+/, '') + '</li>';
+        }).join('');
+        return '<ol>' + items + '</ol>';
+    });
 
     // Paragraphs
     html = html.split('\n\n').map(p => {
         p = p.trim();
         if (!p) return '';
-        if (p.startsWith('<pre>') || p.startsWith('<ul>') || p.startsWith('<ol>') || p.startsWith('<li>')) return p;
+        if (p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<li') || p.startsWith('<h') || p.startsWith('<div class="code-block')) return p;
         return `<p>${p.replace(/\n/g, '<br>')}</p>`;
     }).join('');
 
@@ -871,12 +902,56 @@ function renderMarkdown(text) {
 }
 
 function copyCodeBlock(btn) {
-    const pre = btn.closest('pre');
-    const code = pre.querySelector('code');
+    const wrapper = btn.closest('.code-block-wrapper') || btn.closest('pre');
+    const code = wrapper.querySelector('code');
     navigator.clipboard.writeText(code.textContent).then(() => {
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check"></i> Copied!';
+        btn.classList.add('copied');
+        initLucide();
+        setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); initLucide(); }, 1500);
     });
+}
+
+function insertCodeBlock(btn) {
+    const wrapper = btn.closest('.code-block-wrapper');
+    const code = wrapper.querySelector('code');
+    const codeText = code.textContent;
+
+    // Insert into editor
+    if (window.editor) {
+        const position = window.editor.getPosition();
+        window.editor.executeEdits('sensei-insert', [{
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            text: codeText + '\n'
+        }]);
+        window.editor.focus();
+    } else {
+        setEditorCode(codeText);
+    }
+
+    // Visual feedback
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="check"></i> Inserted!';
+    btn.classList.add('copied');
+    initLucide();
+    setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); initLucide(); }, 1500);
+
+    checkEditorEmptyState();
+    TabManager.markDirty(State.activeTabId);
+    showToast('Inserted', 'Code inserted into editor');
+}
+
+function clearChat() {
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = `<div class="chat-message ai-message">
+        <div class="message-avatar"><i data-lucide="bot"></i></div>
+        <div class="message-content"><p>Chat cleared. How can I help you with your code? 🥋</p></div>
+    </div>`;
+    initLucide();
+
+    // Clear server-side history
+    fetch('http://localhost:8000/chat/clear', { method: 'POST' }).catch(() => {});
 }
 
 async function loadStarterCode(type) {
@@ -897,21 +972,19 @@ function handleQuickAction(action) {
     const codeContext = getEditorCode();
 
     const actions = {
-        'step-by-step': 'Can you explain this C++ code step by step?\n\n```cpp\n' + codeContext + '\n```',
-        'optimize': 'How can I optimize this C++ code?\n\n```cpp\n' + codeContext + '\n```',
-        'find-errors': 'Are there any errors or issues in this C++ code?\n\n```cpp\n' + codeContext + '\n```',
-        'starter-io': null,
-        'starter-array': null,
-        'starter-string': null,
+        'explain-code': 'Explain this C++ code step by step. What does each part do?\n\n```cpp\n' + codeContext + '\n```',
+        'optimize': 'How can I optimize this C++ code for better performance or readability?\n\n```cpp\n' + codeContext + '\n```',
+        'find-errors': 'Are there any bugs or potential issues in this C++ code? Check for logic errors, memory issues, and edge cases.\n\n```cpp\n' + codeContext + '\n```',
+        'fix-errors': 'Fix any errors in this C++ code and explain what was wrong:\n\n```cpp\n' + codeContext + '\n```',
+        'what-does': 'What does this C++ code do? Give me a brief summary of its purpose and output.\n\n```cpp\n' + codeContext + '\n```',
     };
-
-    if (action.startsWith('starter-')) {
-        loadStarterCode(action.replace('starter-', ''));
-        return;
-    }
 
     const message = actions[action];
     if (message) {
+        // Open AI panel if not visible
+        if (!State.rightPanelVisible || State.rightPanelView !== 'ai') {
+            showRightPanelView('ai');
+        }
         document.getElementById('chatInput').value = message;
         sendMessage();
     }
@@ -934,6 +1007,10 @@ async function handleRunCode() {
     consoleOutput.innerHTML = '';
     consoleInput.value = '';
 
+    // Track terminal output for error diagnosis
+    let terminalBuffer = '';
+    let hasCompilationError = false;
+
     // Close existing socket
     if (State.socket) {
         State.socket.close();
@@ -950,13 +1027,26 @@ async function handleRunCode() {
         };
 
         State.socket.onmessage = function (event) {
-            appendToTerminal(event.data);
+            const msg = event.data;
+            appendToTerminal(msg);
             consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+            // Accumulate output and detect compilation errors
+            terminalBuffer += msg;
+            if (msg.includes('Compilation Error:') || terminalBuffer.includes('Compilation Error:')) {
+                hasCompilationError = true;
+            }
         };
 
         State.socket.onclose = function () {
             appendToTerminal('\n[Disconnected]', 'compile-msg');
             updateConnectionStatus(false);
+
+            // Auto-diagnose compilation errors
+            if (hasCompilationError && terminalBuffer.includes('Compilation Error:')) {
+                const errorText = terminalBuffer.replace('Compiling...\n', '').replace('Compilation Error:\n', '').trim();
+                triggerErrorDiagnosis(code, errorText);
+            }
         };
 
         State.socket.onerror = function () {
@@ -965,6 +1055,35 @@ async function handleRunCode() {
         };
     } catch (e) {
         appendToTerminal('Error connecting: ' + e.message, 'error-msg');
+    }
+}
+
+async function triggerErrorDiagnosis(code, errorText) {
+    // Open AI panel automatically
+    showRightPanelView('ai');
+
+    // Show loading state
+    const loadingId = 'diagnosis-loading-' + Date.now();
+    addChatMessage(null, 'ai', loadingId, true);
+
+    try {
+        const response = await fetch('http://localhost:8000/diagnose', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: code, error: errorText })
+        });
+        const data = await response.json();
+
+        // Remove loading
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+
+        // Add diagnosis message with special styling
+        addChatMessage(data.response, 'ai', null, false, true);
+    } catch (e) {
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        addChatMessage('Could not diagnose the error. Is the server running?', 'ai');
     }
 }
 
@@ -1630,6 +1749,9 @@ function setupEventListeners() {
             handleQuickAction(chip.dataset.action);
         });
     });
+
+    // Clear chat button
+    document.getElementById('clearChat')?.addEventListener('click', clearChat);
 
     // Activity bar
     document.getElementById('actExplorer')?.addEventListener('click', () => {

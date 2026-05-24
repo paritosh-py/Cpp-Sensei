@@ -37,6 +37,11 @@ class ExplanationRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    code_context: str = None
+
+class DiagnoseRequest(BaseModel):
+    code: str
+    error: str
 
 @app.post("/explain")
 async def explain_line(req: ExplanationRequest):
@@ -51,8 +56,18 @@ async def explain_line(req: ExplanationRequest):
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
-    response = ai_assistant.chat(req.message)
+    response = ai_assistant.chat(req.message, code_context=req.code_context)
     return {"response": response}
+
+@app.post("/diagnose")
+async def diagnose_endpoint(req: DiagnoseRequest):
+    response = ai_assistant.diagnose_error(req.code, req.error)
+    return {"response": response}
+
+@app.post("/chat/clear")
+async def clear_chat():
+    ai_assistant.clear_history()
+    return {"status": "ok"}
 
 @app.get("/starter-code/{type_key}")
 async def get_starter_code(type_key: str):
