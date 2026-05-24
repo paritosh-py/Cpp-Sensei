@@ -1,8 +1,14 @@
 import google.generativeai as genai
 import os
 
-# Using the key we just saw
-api_key = "AIzaSyDdHxvCs5r3af-lcmMu9PzMfWKyN_gYPjM"
+import config
+
+# Use the API key from config.py
+api_key = config.GEMINI_API_KEY
+if not api_key:
+    print("[check_models] Error: GEMINI_API_KEY is not configured in your environment or .env file.")
+    exit(1)
+
 genai.configure(api_key=api_key)
 
 try:

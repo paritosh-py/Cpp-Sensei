@@ -1,54 +1,33 @@
 import google.generativeai as genai
 import os
+import config
 
 # ============================================================================
-# SYSTEM PROMPT — Structured behavioral control for Cpp Sensei
+# SYSTEM PROMPTS — Structured behavioral control for Cpp Sensei
 # ============================================================================
 
-SENSEI_SYSTEM_PROMPT = """You are **Cpp Sensei** (先生), a focused, professional C++ coding mentor integrated into the Sensei IDE.
-
-## IDENTITY
-- You are an IDE-native coding assistant, NOT a general-purpose chatbot.
-- You help beginners learn C++ programming through clear, structured explanations.
-- Your tone is encouraging, concise, and technically precise.
-
-## STRICT BEHAVIORAL RULES
-1. **ONLY** answer questions about C++, programming concepts, computer science fundamentals, debugging, and IDE usage.
-2. If a user asks about unrelated topics (weather, movies, personal advice, politics, other languages), respond EXACTLY with: "I'm focused on C++ and programming! 🥋 Let me help you with your code instead. What would you like to learn?"
-3. NEVER generate content that is harmful, unethical, or unrelated to programming education.
-4. NEVER pretend to be a different AI or break character.
-5. If you don't know something, say so honestly rather than guessing.
-
-## RESPONSE FORMATTING
-- Use **markdown** formatting in all responses.
-- Wrap ALL code in fenced code blocks with the `cpp` language tag: ```cpp ... ```
-- Keep responses concise: aim for 3-8 sentences for simple questions, longer for complex explanations.
-- Use bullet points and numbered lists for multi-step explanations.
-- Use **bold** for key terms when introducing them for the first time.
-- Use inline `code` formatting for variable names, function names, and keywords mentioned in text.
-
-## EDUCATIONAL APPROACH
-- Explain the **why**, not just the **what**. Help users understand the reasoning.
-- Use simple analogies when explaining complex concepts to beginners.
-- When showing code, always add brief inline comments explaining key lines.
-- When fixing errors, explain what went wrong and why the fix works.
-- Suggest next learning steps when appropriate.
-
-## CONTEXT AWARENESS
-- When the user shares their code, analyze it carefully before responding.
-- Reference specific line numbers or variable names from the user's code when relevant.
-- If code has multiple issues, prioritize the most critical one first.
+# Base identity shared across chat and diagnosis models to maintain consistency and token efficiency
+BASE_IDENTITY = """You are **Cpp Sensei** (先生), a focused, professional C++ coding mentor integrated into the Sensei IDE.
+Tone: Encouraging, concise, technically precise.
+Scope: ONLY answer questions about C++, programming concepts, computer science fundamentals, debugging, and IDE usage.
+For unrelated topics, reply EXACTLY with: "I'm focused on C++ and programming! 🥋 Let me help you with your code instead. What would you like to learn?"
 """
 
-DIAGNOSE_SYSTEM_PROMPT = """You are **Cpp Sensei** (先生), diagnosing a C++ compilation error for a beginner.
+SENSEI_SYSTEM_PROMPT = BASE_IDENTITY + """
+## RESPONSE FORMATTING & GUIDELINES
+- Use markdown formatting in all responses.
+- Wrap ALL C++ code in fenced code blocks with the `cpp` language tag.
+- Keep responses concise: aim for 3-8 sentences for simple questions.
+- Use bullet points and numbered lists for multi-step explanations.
+- Explain the **why**, not just the **what**, using simple analogies for beginners.
+- When showing code, always add brief inline comments explaining key lines.
+- Reference specific line numbers or variables from the user's code context when relevant.
+"""
 
-## YOUR TASK
-A student's C++ code failed to compile. You are given:
-1. Their source code
-2. The compiler error output from g++
-
-## RESPONSE FORMAT
-Structure your response EXACTLY like this:
+DIAGNOSE_SYSTEM_PROMPT = BASE_IDENTITY + """
+## ERROR DIAGNOSIS TASK
+A student's C++ code failed to compile. You are given their source code and the compiler error output.
+Analyze the information and structure your response EXACTLY like this:
 
 ### ❌ Error Found
 One-sentence plain-English summary of what went wrong.
@@ -57,16 +36,12 @@ One-sentence plain-English summary of what went wrong.
 Identify the exact line and what's wrong on that line.
 
 ### 🔧 How to Fix
-Show the corrected code snippet (use ```cpp fenced code blocks).
+Show the corrected C++ code snippet (use ```cpp fenced blocks).
 
 ### 💡 Why This Happens
 One or two sentences explaining the underlying concept so the student learns from it.
 
-## RULES
-- Be encouraging, not condescending.
-- Focus on the FIRST error only (later errors are often caused by the first one).
-- Keep it concise — no more than 150 words total.
-- Always use markdown formatting.
+Rules: Focus on the FIRST compilation error only, keep it under 150 words total, and use markdown.
 """
 
 
@@ -130,74 +105,50 @@ int main() {
 }"""
         }
 
-        # Configure API Key
-        # HARDCODED FOR NOW - In production, use os.environ["GEMINI_API_KEY"]
-        api_key = "AIzaSyDdHxvCs5r3af-lcmMu9PzMfWKyN_gYPjM"
+        # Track last code context to prevent redundant token consumption
+        self.last_code_context = None
+
+        # Configure API Key securely from centralized config
+        api_key = config.GEMINI_API_KEY
         
         if not api_key:
-            print("WARNING: GEMINI_API_KEY not found.")
+            print("[GeminiAssistant] WARNING: GEMINI_API_KEY not configured. AI features are offline.")
             self.model = None
             self.diagnose_model = None
         else:
             try:
                 genai.configure(api_key=api_key)
                 
-                # Auto-detect the best available model
-                available_models = []
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods:
-                        available_models.append(m.name)
+                # Use model configured in config.py
+                selected_model = config.GEMINI_MODEL
+                # Ensure model name starts with models/ if it doesn't already
+                if not selected_model.startswith("models/"):
+                    selected_model = f"models/{selected_model}"
                 
-                # Prefer known good models in order
-                preferred_order = [
-                    'models/gemini-1.5-flash',
-                    'models/gemini-1.5-pro',
-                    'models/gemini-2.0-flash-exp',
-                    'models/gemini-1.0-pro',
-                    'models/gemini-pro'
-                ]
+                print(f"[GeminiAssistant] Initializing model: {selected_model}")
                 
-                selected_model = None
+                # Main chat model with system instruction & token limits
+                self.model = genai.GenerativeModel(
+                    selected_model,
+                    system_instruction=SENSEI_SYSTEM_PROMPT,
+                    generation_config={
+                        "temperature": config.AI_TEMPERATURE,
+                        "max_output_tokens": config.AI_MAX_OUTPUT_TOKENS
+                    }
+                )
+                self.chat_session = self.model.start_chat(history=[])
                 
-                # Check preferred first
-                for p in preferred_order:
-                    if p in available_models:
-                        selected_model = p
-                        break
-                
-                # If no preferred, take the first available gemini
-                if not selected_model:
-                    for m in available_models:
-                        if 'gemini' in m:
-                            selected_model = m
-                            break
-                            
-                # Fallback to anything
-                if not selected_model and available_models:
-                    selected_model = available_models[0]
-                    
-                if selected_model:
-                    print(f"Selected AI Model: {selected_model}")
-                    
-                    # Main chat model with system instruction
-                    self.model = genai.GenerativeModel(
-                        selected_model,
-                        system_instruction=SENSEI_SYSTEM_PROMPT
-                    )
-                    self.chat_session = self.model.start_chat(history=[])
-                    
-                    # Separate model instance for error diagnosis
-                    self.diagnose_model = genai.GenerativeModel(
-                        selected_model,
-                        system_instruction=DIAGNOSE_SYSTEM_PROMPT
-                    )
-                else:
-                    print("Error: No suitable Gemini models found.")
-                    self.model = None
-                    self.diagnose_model = None
-
+                # Separate model instance for error diagnosis
+                self.diagnose_model = genai.GenerativeModel(
+                    selected_model,
+                    system_instruction=DIAGNOSE_SYSTEM_PROMPT,
+                    generation_config={
+                        "temperature": config.AI_TEMPERATURE,
+                        "max_output_tokens": config.AI_MAX_OUTPUT_TOKENS
+                    }
+                )
             except Exception as e:
-                print(f"Error initializing Gemini: {e}")
+                print(f"[GeminiAssistant] Error initializing Gemini: {e}")
                 self.model = None
                 self.diagnose_model = None
 
@@ -207,12 +158,19 @@ int main() {
     def chat(self, user_message, code_context=None):
         """Send a message to the AI assistant with optional code context."""
         if not self.model:
-            return "Error: Gemini API Key is missing. Please set GEMINI_API_KEY."
+            return "Sensei: AI services are currently offline. Please set a valid `GEMINI_API_KEY` in your `.env` configuration file to enable the AI assistant."
 
         try:
-            # Build the message with optional code context
-            if code_context and code_context.strip():
-                full_message = f"[Current code in editor]:\n```cpp\n{code_context}\n```\n\n{user_message}"
+            # Clean and check code context to avoid redundant token usage
+            cleaned_context = code_context.strip() if code_context else None
+            
+            # Only append code context if it is present and has changed
+            if cleaned_context and cleaned_context != self.last_code_context:
+                # Optionally truncate massive context files to protect token usage limits
+                if len(cleaned_context) > 20000:
+                    cleaned_context = cleaned_context[:20000] + "\n// [Code truncated for length...]"
+                full_message = f"[Current code in editor]:\n```cpp\n{cleaned_context}\n```\n\n{user_message}"
+                self.last_code_context = cleaned_context
             else:
                 full_message = user_message
 
@@ -220,30 +178,47 @@ int main() {
             response = self.chat_session.send_message(full_message)
             return response.text
         except Exception as e:
-            # If chat session fails, try resetting it
+            # Handle specific API errors gracefully
+            err_msg = str(e)
+            if "API_KEY" in err_msg or "API key" in err_msg or "403" in err_msg or "APIKey" in err_msg:
+                return "Sensei: AI services are temporarily unavailable due to an authentication issue. Please verify that a valid GEMINI_API_KEY is configured in your backend environment settings."
+            elif "quota" in err_msg.lower() or "limit" in err_msg.lower() or "429" in err_msg:
+                return "Sensei: We have reached the rate limit or quota for AI requests. Please wait a moment or try again later."
+            
+            # If chat session fails due to history mismatch, reset and retry once
             try:
                 self.chat_session = self.model.start_chat(history=[])
+                self.last_code_context = None
                 response = self.chat_session.send_message(user_message)
                 return response.text
             except Exception as retry_e:
-                return f"AI Error: {str(retry_e)}"
+                retry_err_msg = str(retry_e)
+                if "API_KEY" in retry_err_msg or "API key" in retry_err_msg or "403" in retry_err_msg or "APIKey" in retry_err_msg:
+                    return "Sensei: AI services are temporarily unavailable due to an authentication issue. Please verify that a valid GEMINI_API_KEY is configured in your backend environment settings."
+                elif "quota" in retry_err_msg.lower() or "limit" in retry_err_msg.lower() or "429" in retry_err_msg:
+                    return "Sensei: We have reached the rate limit or quota for AI requests. Please wait a moment or try again later."
+                return f"Sensei: I ran into an issue connecting to AI services: {retry_err_msg}"
 
     def diagnose_error(self, code, error_text):
         """Diagnose a compilation error and provide beginner-friendly explanation."""
         if not self.diagnose_model:
-            return "Error: AI model not available for error diagnosis."
+            return "Sensei: AI services are currently offline. Please set a valid `GEMINI_API_KEY` in your `.env` configuration file to enable error diagnosis."
 
         try:
+            # Truncate overly long error inputs or code context
+            trimmed_code = code[:15000] if code else ""
+            trimmed_err = error_text[:5000] if error_text else ""
+            
             prompt = f"""The student wrote this C++ code:
 
 ```cpp
-{code}
+{trimmed_code}
 ```
 
 The compiler returned this error:
 
 ```
-{error_text}
+{trimmed_err}
 ```
 
 Diagnose the error following your instructions."""
@@ -251,9 +226,18 @@ Diagnose the error following your instructions."""
             response = self.diagnose_model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Could not diagnose error: {str(e)}"
+            err_msg = str(e)
+            if "API_KEY" in err_msg or "API key" in err_msg or "403" in err_msg or "APIKey" in err_msg:
+                return "Sensei: AI services are temporarily unavailable due to an authentication issue. Please verify that a valid GEMINI_API_KEY is configured in your backend environment settings."
+            elif "quota" in err_msg.lower() or "limit" in err_msg.lower() or "429" in err_msg:
+                return "Sensei: We have reached the rate limit or quota for AI requests. Please wait a moment or try again later."
+            return f"Sensei: Could not diagnose error: {err_msg}"
 
     def clear_history(self):
         """Reset the chat session to clear conversation memory."""
+        self.last_code_context = None
         if self.model:
-            self.chat_session = self.model.start_chat(history=[])
+            try:
+                self.chat_session = self.model.start_chat(history=[])
+            except Exception:
+                pass
