@@ -58,13 +58,24 @@
     pip install fastapi uvicorn google-generativeai websockets pydantic
     ```
 
-3.  **Run the Server**
+3.  **Configure Environment Settings**
+    Copy the template configuration to `.env` and add your Google AI Studio Gemini API Key:
+    ```bash
+    copy .env.example .env
+    # On Linux/macOS: cp .env.example .env
+    ```
+    Open `.env` in a text editor and add your key:
+    ```env
+    GEMINI_API_KEY=your_actual_api_key_here
+    ```
+
+4.  **Run the Server**
     ```bash
     python server.py
     ```
 
-4.  **Open the IDE**
-    Open `index.html` directly in a browser (or via local file system) and connect to the local server.
+5.  **Open the IDE**
+    Navigate to `http://localhost:8000` (or your configured `BACKEND_HOST` and `BACKEND_PORT`) in any modern web browser.
 
 ---
 
