@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learn - Cpp Sensei</title>
+    <meta name="description" content="Learn C++ programming with interactive tutorials">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="public/styles.css">
+    <link rel="stylesheet" href="public/legacy.css">
+</head>
+
+<body class="dark-mode page-legacy">
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-mascot">🥋</div>
+            <h2 class="loading-title">Cpp Sensei</h2>
+            <p class="loading-text">Preparing your learning experience...</p>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-logo">
+                <div class="logo-icon">🥋</div>
+                <span class="logo-text">Cpp Sensei</span>
+            </div>
+
+            <div class="navbar-menu">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="learn.html" class="nav-link active">Learn</a>
+                <a href="features.html" class="nav-link">Features</a>
+                <a href="about.html" class="nav-link">About</a>
+            </div>
+
+            <div class="navbar-right">
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <i data-lucide="sun" class="theme-icon light-icon"></i>
+                    <i data-lucide="moon" class="theme-icon dark-icon"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Learn Section -->
+    <section class="section-learn-page">
+        <div class="container">
+            <div class="section-header">
+                <h1>Learn with Cpp Sensei</h1>
+                <p>Interactive tutorials designed for absolute beginners</p>
+            </div>
+
+            <div class="tutorial-grid">
+                <div class="tutorial-card">
+                    <div class="tutorial-icon">📚</div>
+                    <h3>Learn C++ from Scratch</h3>
+                    <p>Start your coding journey with zero prior knowledge required</p>
+                    <button class="btn btn-primary" onclick="window.location.href='index.html'">Start Learning</button>
+                </div>
+                <div class="tutorial-card">
+                    <div class="tutorial-icon">🔍</div>
+                    <h3>Line by Line Explanations</h3>
+                    <p>Understand every single line of code in simple English</p>
+                    <button class="btn btn-primary" onclick="window.location.href='index.html'">Start Learning</button>
+                </div>
+                <div class="tutorial-card">
+                    <div class="tutorial-icon">💬</div>
+                    <h3>Input & Output with cin/cout</h3>
+                    <p>Master how to get input and display output in C++</p>
+                    <button class="btn btn-primary" onclick="window.location.href='index.html'">Start Learning</button>
+                </div>
+                <div class="tutorial-card">
+                    <div class="tutorial-icon">🔄</div>
+                    <h3>Variables & Loops</h3>
+                    <p>Learn how to store data and repeat actions efficiently</p>
+                    <button class="btn btn-primary" onclick="window.location.href='index.html'">Start Learning</button>
+                </div>
+            </div>
+
+            <div class="learning-flow">
+                <h2>How It Works</h2>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <div class="step-number">1</div>
+                        <div class="step-icon">⌨️</div>
+                        <h3>Type Your Code</h3>
+                        <p>Write or paste your C++ code in the editor</p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-number">2</div>
+                        <div class="step-icon">🔍</div>
+                        <h3>Click "Explain"</h3>
+                        <p>Let the AI analyze your code</p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-number">3</div>
+                        <div class="step-icon">📖</div>
+                        <h3>Read Explanations</h3>
+                        <p>Get beginner-friendly breakdowns</p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-number">4</div>
+                        <div class="step-icon">💬</div>
+                        <h3>Chat with Sensei</h3>
+                        <p>Ask questions anytime</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="public/script.js"></script>
+</body>
+
+</html>

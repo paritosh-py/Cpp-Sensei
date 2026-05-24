@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import subprocess
 import os
@@ -8,9 +10,7 @@ import asyncio
 import threading
 from logic import SenseiLogic
 from ai_logic import GeminiAssistant
-from pydantic import BaseModel
-import os
-
+#  python -m uvicorn server:app --reload Starting command.
 app = FastAPI()
 sensei = SenseiLogic() 
 ai_assistant = GeminiAssistant()
@@ -24,6 +24,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve static files
+app.mount("/public", StaticFiles(directory="public"), name="public")
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+
+@app.get("/")
+async def serve_index():
+    return FileResponse("index.html")
+
 class ExplanationRequest(BaseModel):
     line: str
 
@@ -33,7 +41,13 @@ class ChatRequest(BaseModel):
 @app.post("/explain")
 async def explain_line(req: ExplanationRequest):
     explanation = sensei.explain_line(req.line)
-    return {"explanation": explanation}
+    structured = sensei.explain_line_structured(req.line)
+    return {
+        "explanation": explanation,
+        "summary": structured["summary"],
+        "detail": structured["detail"],
+        "url": structured["url"]
+    }
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):

@@ -1,232 +1,724 @@
-// Global State
-let isBeginnerMode = true;
-let explanationMode = 'idle'; // 'idle', 'line', 'full'
-let isChatboxExpanded = false;
+/* ============================================================================
+   SENSEI IDE — Client-Side Application Logic
+   ============================================================================
+   Organized into modules:
+   1. State Management
+   2. Initialization
+   3. File Explorer
+   4. Tab Manager
+   5. Editor
+   6. Explanation Engine
+   7. AI Assistant
+   8. Terminal / Console
+   9. Keyboard Shortcuts
+   10. Panel Management
+   11. Menu System
+   12. Theme
+   13. Notifications
+   14. Utilities
+   ============================================================================ */
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function () {
-    initializeLucideIcons();
-    setupEventListeners();
-    updateLineNumbers();
-    initializeTheme();
-    setupSmoothScroll();
+// ============================================================================
+// 1. STATE MANAGEMENT
+// ============================================================================
+
+const State = {
+    // Editor
+    activeTabId: 'untitled-1',
+    tabs: new Map(), // tabId → { name, content, dirty, fileHandle, filePath }
+    untitledCounter: 1,
+
+    // Panels
+    sidebarVisible: true,
+    sidebarView: 'explorer', // 'explorer' | 'explain'
+    rightPanelVisible: false,
+    rightPanelView: 'ai', // 'ai' | 'explain'
+    bottomPanelVisible: false,
+    bottomPanelHeight: 200,
+    sidebarWidth: 240,
+    rightPanelWidth: 340,
+
+    // Explanation
+    explanationMode: 'idle', // 'idle' | 'line'
+    lastExplainedLine: -1,
+    explainTimeout: null,
+
+    // AI
+    chatHistory: [],
+
+    // File Explorer
+    folderHandle: null,
+    fileTree: [],
+
+    // WebSocket
+    socket: null,
+
+    // Theme
+    isDarkMode: true,
+
+    // Resize
+    isResizing: false,
+    resizeTarget: null,
+};
+
+// Initialize default tab
+State.tabs.set('untitled-1', {
+    name: 'Untitled-1.cpp',
+    content: null, // will be read from textarea
+    dirty: false,
+    fileHandle: null,
+    filePath: null
 });
 
-// Initialize Lucide icons
-function initializeLucideIcons() {
+
+// ============================================================================
+// 2. INITIALIZATION
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', async function () {
+    initLucide();
+    initTheme();
+    setupEventListeners();
+    setupKeyboardShortcuts();
+    setupPanelResize();
+    setupMenuSystem();
+    checkServerConnection();
+
+    // Store initial content
+    const textarea = document.getElementById('codeTextarea');
+    if (textarea) {
+        State.tabs.get('untitled-1').content = textarea.value;
+    }
+
+    // Initialize Monaco Editor
+    await initMonaco();
+
+    // Render onboarding templates
+    renderStarterTemplates();
+
+    // Check initial empty state
+    checkEditorEmptyState();
+
+    updateStatusBar();
+    TabManager.renderTabs();
+});
+
+function initLucide() {
     if (typeof lucide !== 'undefined') {
         lucide.createIcons();
     }
 }
 
-// Setup all event listeners
-function setupEventListeners() {
-    // Theme toggle
-    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 
-    // Code editor actions
-    document.getElementById('runCode').addEventListener('click', handleRunCode);
-    document.getElementById('lineExplain').addEventListener('click', handleLineExplain);
-    document.getElementById('fullExplain').addEventListener('click', handleFullExplain);
-    document.getElementById('copyCode').addEventListener('click', handleCopyCode);
-    document.getElementById('downloadCode').addEventListener('click', handleDownloadCode);
+// ============================================================================
+// 3. FILE EXPLORER
+// ============================================================================
 
-    // Explanation panel
-    document.getElementById('toggleBeginnerMode').addEventListener('click', toggleBeginnerMode);
-
-    // Code textarea
-    const codeTextarea = document.getElementById('codeTextarea');
-    codeTextarea.addEventListener('input', () => {
-        updateLineNumbers();
-        handleCursorMove(); // Explain on type
-    });
-    codeTextarea.addEventListener('scroll', syncLineNumbersScroll);
-    codeTextarea.addEventListener('click', handleCursorMove); // Explain on click
-    codeTextarea.addEventListener('keyup', handleCursorMove); // Explain on arrow keys
-
-    // AI Chatbox
-    document.getElementById('chatboxHeader').addEventListener('click', toggleChatbox);
-    document.getElementById('chatboxToggle').addEventListener('click', toggleChatbox);
-    document.getElementById('sendButton').addEventListener('click', sendMessage);
-    document.getElementById('chatInput').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            sendMessage();
-        }
-    });
-
-    // Quick action buttons
-    document.querySelectorAll('.quick-action-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const action = this.getAttribute('data-action');
-            handleQuickAction(action);
-        });
-    });
-
-    // Console Input
-    const consoleInput = document.getElementById('consoleInput');
-    if (consoleInput) {
-        consoleInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                sendConsoleInput();
+const FileExplorer = {
+    async openFolder() {
+        try {
+            if ('showDirectoryPicker' in window) {
+                const handle = await window.showDirectoryPicker();
+                State.folderHandle = handle;
+                await this.readDirectory(handle);
+            } else {
+                showToast('Unsupported', 'File System Access API not available in this browser. Use Chrome or Edge.');
             }
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                showToast('Error', 'Failed to open folder: ' + e.message);
+            }
+        }
+    },
+
+    async readDirectory(dirHandle, depth = 0, parentPath = '') {
+        const entries = [];
+        for await (const entry of dirHandle.values()) {
+            if (entry.name.startsWith('.')) continue; // skip hidden files
+            const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+            if (entry.kind === 'directory') {
+                const children = await this.readDirectory(entry, depth + 1, relativePath);
+                entries.push({
+                    name: entry.name,
+                    path: relativePath,
+                    kind: 'directory',
+                    handle: entry,
+                    children: children,
+                    expanded: depth === 0,
+                    depth: depth
+                });
+            } else {
+                entries.push({
+                    name: entry.name,
+                    path: relativePath,
+                    kind: 'file',
+                    handle: entry,
+                    depth: depth
+                });
+            }
+        }
+        // Sort: folders first, then alphabetical
+        entries.sort((a, b) => {
+            if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        if (depth === 0) {
+            State.fileTree = entries;
+            this.renderTree();
+        }
+        return entries;
+    },
+
+    renderTree() {
+        const container = document.getElementById('fileTree');
+        const emptyState = document.getElementById('sidebarEmpty');
+
+        if (State.fileTree.length === 0 && !State.folderHandle) {
+            emptyState.style.display = 'flex';
+            return;
+        }
+        emptyState.style.display = 'none';
+
+        const renderNode = (node, depth) => {
+            const indent = depth * 12; // tighter spacing
+            if (node.kind === 'directory') {
+                const chevronClass = node.expanded ? 'expanded' : '';
+                const childrenClass = node.expanded ? '' : 'collapsed';
+
+                let childrenHtml = '';
+                if (node.children) {
+                    node.children.forEach(child => {
+                        childrenHtml += renderNode(child, depth + 1);
+                    });
+                }
+
+                return `<div class="tree-folder" data-path="${node.path}">
+                    <div class="tree-item" data-path="${node.path}" data-kind="directory" style="padding-left: ${8 + indent}px;" data-depth="${depth}">
+                        <span class="chevron ${chevronClass}"><i data-lucide="chevron-right"></i></span>
+                        <span class="file-icon folder"><i data-lucide="folder"></i></span>
+                        <span class="file-name">${node.name}</span>
+                    </div>
+                    <div class="tree-children ${childrenClass}">
+                        ${childrenHtml}
+                    </div>
+                </div>`;
+            } else {
+                const ext = node.name.split('.').pop().toLowerCase();
+                let iconClass = 'default';
+                if (ext === 'cpp' || ext === 'cc' || ext === 'cxx') iconClass = 'cpp';
+                else if (ext === 'h' || ext === 'hpp') iconClass = 'h';
+
+                return `<div class="tree-item" data-path="${node.path}" data-kind="file" style="padding-left: ${8 + indent + 16}px;" data-depth="${depth}">
+                    <span class="file-icon ${iconClass}"><i data-lucide="file-code"></i></span>
+                    <span class="file-name">${node.name}</span>
+                </div>`;
+            }
+        };
+
+        let html = '';
+        State.fileTree.forEach(node => {
+            html += renderNode(node, 0);
+        });
+        container.innerHTML = html;
+        initLucide();
+
+        // Highlight active file in the newly rendered tree
+        const activeTab = State.tabs.get(State.activeTabId);
+        if (activeTab && activeTab.filePath) {
+            container.querySelectorAll('.tree-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.path === activeTab.filePath);
+            });
+        }
+
+        // Attach click handlers
+        container.querySelectorAll('.tree-item').forEach(item => {
+            item.addEventListener('click', (e) => this.handleTreeClick(e, item));
+            item.addEventListener('contextmenu', (e) => this.handleTreeContextMenu(e, item));
+        });
+    },
+
+    handleTreeClick(e, item) {
+        const kind = item.dataset.kind;
+        const path = item.dataset.path;
+
+        if (kind === 'directory') {
+            this.toggleFolder(item, path);
+        } else {
+            this.openFileFromTree(item, path);
+        }
+    },
+
+    toggleFolder(item, path) {
+        // Find node in tree and toggle expanded state
+        const toggleNode = (nodes) => {
+            for (const node of nodes) {
+                if (node.path === path && node.kind === 'directory') {
+                    node.expanded = !node.expanded;
+                    return node.expanded;
+                }
+                if (node.children) {
+                    const result = toggleNode(node.children);
+                    if (result !== undefined) return result;
+                }
+            }
+        };
+        const expanded = toggleNode(State.fileTree);
+        if (expanded === undefined) return;
+
+        // Toggle visual classes in DOM for smooth animation
+        const chevron = item.querySelector('.chevron');
+        if (chevron) {
+            chevron.classList.toggle('expanded', expanded);
+        }
+
+        const parentFolder = item.closest('.tree-folder');
+        if (parentFolder) {
+            const children = parentFolder.querySelector(':scope > .tree-children');
+            if (children) {
+                children.classList.toggle('collapsed', !expanded);
+            }
+        }
+    },
+
+    async openFileFromTree(item, path) {
+        // Find the file handle using relative path
+        const findHandle = (nodes) => {
+            for (const node of nodes) {
+                if (node.path === path && node.kind === 'file') return node.handle;
+                if (node.children) {
+                    const found = findHandle(node.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const handle = findHandle(State.fileTree);
+        if (!handle) return;
+
+        // Check if already open by matching unique filePath
+        for (const [tabId, tab] of State.tabs) {
+            if (tab.filePath === path) {
+                TabManager.switchTab(tabId);
+                return;
+            }
+        }
+
+        try {
+            const file = await handle.getFile();
+            const content = await file.text();
+            const tabId = 'file-' + path.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+            const filename = item.querySelector('.file-name').textContent;
+            TabManager.openTab(tabId, filename, content, handle, path);
+        } catch (e) {
+            showToast('Error', 'Cannot read file: ' + e.message);
+        }
+    },
+
+    handleTreeContextMenu(e, item) {
+        e.preventDefault();
+        const menu = document.getElementById('contextMenu');
+        menu.style.left = e.clientX + 'px';
+        menu.style.top = e.clientY + 'px';
+        menu.classList.add('active');
+        menu._targetItem = item;
+    },
+
+    async createFile(name) {
+        if (!State.folderHandle) {
+            // Create a virtual tab instead
+            State.untitledCounter++;
+            const fileName = name || `Untitled-${State.untitledCounter}.cpp`;
+            const tabId = 'untitled-' + State.untitledCounter;
+            TabManager.openTab(tabId, fileName, '', null);
+            return;
+        }
+
+        try {
+            const fileName = name || 'newfile.cpp';
+            const fileHandle = await State.folderHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write('');
+            await writable.close();
+            await this.readDirectory(State.folderHandle);
+            const tabId = 'file-' + fileName.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+            TabManager.openTab(tabId, fileName, '', fileHandle, fileName);
+            showToast('Created', `File "${fileName}" created`);
+        } catch (e) {
+            showToast('Error', 'Failed to create file: ' + e.message);
+        }
+    },
+
+    async createFolder(name) {
+        if (!State.folderHandle) {
+            showToast('Info', 'Open a folder first to create subfolders.');
+            return;
+        }
+        try {
+            const folderName = name || 'new-folder';
+            await State.folderHandle.getDirectoryHandle(folderName, { create: true });
+            await this.readDirectory(State.folderHandle);
+            showToast('Created', `Folder "${folderName}" created`);
+        } catch (e) {
+            showToast('Error', 'Failed to create folder: ' + e.message);
+        }
+    }
+};
+
+
+// ============================================================================
+// 4. TAB MANAGER
+// ============================================================================
+
+const TabManager = {
+    openTab(tabId, name, content, fileHandle = null, filePath = null) {
+        // Add to state
+        State.tabs.set(tabId, {
+            name: name,
+            content: content,
+            dirty: false,
+            fileHandle: fileHandle,
+            filePath: filePath
+        });
+
+        // Create tab element
+        this.renderTabs();
+        this.switchTab(tabId);
+    },
+
+    closeTab(tabId) {
+        if (State.tabs.size <= 1) {
+            // Don't close the last tab, just clear it
+            const tab = State.tabs.get(tabId);
+            if (tab) {
+                tab.content = '';
+                tab.dirty = false;
+                tab.name = 'Untitled-1.cpp';
+                tab.fileHandle = null;
+                State.untitledCounter = 1;
+                setEditorCode('');
+                checkEditorEmptyState();
+                this.renderTabs();
+                updateTitleBar();
+            }
+            return;
+        }
+
+        State.tabs.delete(tabId);
+
+        // If closing active tab, switch to last tab
+        if (State.activeTabId === tabId) {
+            const lastKey = Array.from(State.tabs.keys()).pop();
+            this.switchTab(lastKey);
+        }
+
+        this.renderTabs();
+    },
+
+    switchTab(tabId) {
+        // Save current tab content
+        const currentTab = State.tabs.get(State.activeTabId);
+        if (currentTab) {
+            currentTab.content = getEditorCode();
+        }
+
+        // Switch
+        State.activeTabId = tabId;
+        const tab = State.tabs.get(tabId);
+        if (tab) {
+            setEditorCode(tab.content || '');
+            checkEditorEmptyState();
+            updateTitleBar();
+        }
+
+        // Update tab UI
+        document.querySelectorAll('.tab').forEach(el => {
+            el.classList.toggle('active', el.dataset.tabId === tabId);
+        });
+
+        // Update file tree selection
+        document.querySelectorAll('.tree-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.path === tab?.filePath);
+        });
+
+        // Reset explanation
+        if (State.explanationMode === 'line') {
+            handleCursorMove();
+        }
+    },
+
+    markDirty(tabId) {
+        const tab = State.tabs.get(tabId);
+        if (tab && !tab.dirty) {
+            tab.dirty = true;
+            this.renderTabs();
+            updateTitleBar();
+        }
+    },
+
+    markClean(tabId) {
+        const tab = State.tabs.get(tabId);
+        if (tab && tab.dirty) {
+            tab.dirty = false;
+            this.renderTabs();
+            updateTitleBar();
+        }
+    },
+
+    renderTabs() {
+        const tabBar = document.getElementById('tabBar');
+        let html = '';
+
+        for (const [tabId, tab] of State.tabs) {
+            const activeClass = tabId === State.activeTabId ? 'active' : '';
+            const dirtyClass = tab.dirty ? 'dirty' : '';
+            const ext = tab.name.split('.').pop().toLowerCase();
+            let iconClass = 'default';
+            if (ext === 'cpp' || ext === 'cc') iconClass = 'cpp';
+            else if (ext === 'h' || ext === 'hpp') iconClass = 'h';
+
+            html += `<div class="tab ${activeClass} ${dirtyClass}" data-tab-id="${tabId}">
+                <span class="tab-icon ${iconClass}"><i data-lucide="file-code"></i></span>
+                <span class="tab-title">${tab.name}</span>
+                <span class="tab-action-container">
+                    <span class="tab-dirty"></span>
+                    <button class="tab-close" title="Close"><i data-lucide="x"></i></button>
+                </span>
+            </div>`;
+        }
+
+        tabBar.innerHTML = html;
+        initLucide();
+
+        // Attach events
+        tabBar.querySelectorAll('.tab').forEach(tabEl => {
+            tabEl.addEventListener('click', (e) => {
+                if (!e.target.closest('.tab-close')) {
+                    this.switchTab(tabEl.dataset.tabId);
+                }
+            });
+            tabEl.querySelector('.tab-close')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.closeTab(tabEl.dataset.tabId);
+            });
         });
     }
+};
 
-    // Close Console
-    document.getElementById('closeConsole').addEventListener('click', () => {
-        document.getElementById('consolePanel').style.display = 'none';
-        if (socket) socket.close();
-    });
+
+// ============================================================================
+// 5. EDITOR
+// ============================================================================
+
+function updateLineNumbers() {
+    if (window.editor) return;
+    const textarea = document.getElementById('codeTextarea');
+    const lineNumbers = document.getElementById('lineNumbers');
+    if (!textarea || !lineNumbers) return;
+
+    const lines = textarea.value.split('\n');
+    const cursorLine = getCursorLineNumber(textarea);
+
+    lineNumbers.innerHTML = lines.map((_, i) => {
+        const num = i + 1;
+        const activeClass = num === cursorLine ? 'active-line' : '';
+        return `<div class="line-num ${activeClass}">${num}</div>`;
+    }).join('');
 }
 
-// Theme Management
-function initializeTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-mode');
-        document.body.classList.remove('light-mode');
+function syncLineNumbersScroll() {
+    if (window.editor) return;
+    const textarea = document.getElementById('codeTextarea');
+    const lineNumbers = document.getElementById('lineNumbers');
+    if (textarea && lineNumbers) {
+        lineNumbers.scrollTop = textarea.scrollTop;
     }
 }
 
-function toggleTheme() {
-    const isDark = document.body.classList.contains('dark-mode');
-
-    if (isDark) {
-        document.body.classList.remove('dark-mode');
-        document.body.classList.add('light-mode');
-        localStorage.setItem('theme', 'light');
-        showToast('Switched to light mode', 'Theme updated successfully!');
-    } else {
-        document.body.classList.remove('light-mode');
-        document.body.classList.add('dark-mode');
-        localStorage.setItem('theme', 'dark');
-        showToast('Switched to dark mode', 'Theme updated successfully!');
-    }
-}
-
-// Code Editor Functions
-// ... Theme ... (unchanged)
-
-let socket = null;
-
-async function handleRunCode() {
-    const code = document.getElementById('codeTextarea').value;
-    const consolePanel = document.getElementById('consolePanel');
-    const consoleOutput = document.getElementById('consoleOutput');
-    const consoleInput = document.getElementById('consoleInput');
-
-    // Reset and Show console
-    consolePanel.style.display = 'flex'; // Changed to flex for layout
-    consoleOutput.textContent = '';
-    consoleInput.value = '';
-    consoleInput.focus();
-
-    // Close existing socket
-    if (socket) {
-        socket.close();
-    }
-
-    showToast('Connecting...', 'Establishing connection to server...');
-
-    try {
-        socket = new WebSocket('ws://localhost:8000/ws/run');
-
-        socket.onopen = function () {
-            socket.send(JSON.stringify({ code: code }));
-            showToast('Running', 'Connected! Program starting...');
-        };
-
-        socket.onmessage = function (event) {
-            consoleOutput.textContent += event.data;
-            consoleOutput.scrollTop = consoleOutput.scrollHeight;
-        };
-
-        socket.onclose = function () {
-            consoleOutput.textContent += '\n\n[Disconnected]';
-        };
-
-        socket.onerror = function () {
-            consoleOutput.textContent += '\n[Connection Error]';
-        };
-
-    } catch (e) {
-        consoleOutput.textContent = 'Error connecting: ' + e.message;
-    }
-}
-
-function sendConsoleInput() {
-    const inputField = document.getElementById('consoleInput');
-    const text = inputField.value;
-
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(text);
-        // Echo input to console for better UX
-        const consoleOutput = document.getElementById('consoleOutput');
-        consoleOutput.textContent += text + '\n';
-        inputField.value = '';
-    } else {
-        showToast('Error', 'Program is not running');
-    }
-}
-
-// Explanation functions...
-
-// Helper to get current line number
 function getCursorLineNumber(textarea) {
+    if (window.editor) {
+        return window.editor.getPosition().lineNumber;
+    }
+    if (!textarea) return 1;
     const value = textarea.value;
     const selectionStart = textarea.selectionStart;
-    const lines = value.substr(0, selectionStart).split("\n");
-    return lines.length; // 1-indexed
+    return value.substr(0, selectionStart).split('\n').length;
 }
 
-let activeLineTimeout = null;
-let lastExplainedLine = -1;
+function getCursorColumn(textarea) {
+    if (window.editor) {
+        return window.editor.getPosition().column;
+    }
+    if (!textarea) return 1;
+    const value = textarea.value;
+    const selectionStart = textarea.selectionStart;
+    const lines = value.substr(0, selectionStart).split('\n');
+    return lines[lines.length - 1].length + 1;
+}
 
-async function handleLineExplain() {
-    // Just toggle the mode
-    explanationMode = 'line';
-    updateExplanationPanel();
+function handleEditorInput() {
+    updateLineNumbers();
+    updateStatusBar();
+    TabManager.markDirty(State.activeTabId);
 
-    // Add listeners if not already added (check with flag or just add)
-    // For simplicity, we'll ensure they are bound. 
-    // Ideally we bind them once in setup, but we only want them active in this mode.
-    // Let's add them to setupEventListeners but check the mode inside the handler.
+    // Trigger explanation if in line mode
+    if (State.explanationMode === 'line') {
+        handleCursorMove();
+    }
+}
 
-    // Trigger initial explanation for current cursor position
-    handleCursorMove();
+function handleEditorKeydown(e) {
+    const textarea = e.target;
 
-    showToast('Interactive Mode', 'Click or type on any line to explain it!');
+    // Tab key → insert 4 spaces
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        if (e.shiftKey) {
+            // Outdent
+            const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+            const lineText = textarea.value.substring(lineStart, start);
+            const spaces = lineText.match(/^ {1,4}/);
+            if (spaces) {
+                textarea.value = textarea.value.substring(0, lineStart) + textarea.value.substring(lineStart + spaces[0].length);
+                textarea.selectionStart = textarea.selectionEnd = start - spaces[0].length;
+            }
+        } else {
+            textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + 4;
+        }
+        handleEditorInput();
+    }
+
+    // Enter key → auto-indent
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const start = textarea.selectionStart;
+        const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+        const currentLine = textarea.value.substring(lineStart, start);
+        const indent = currentLine.match(/^\s*/)[0];
+
+        // If line ends with {, add extra indent
+        const trimmed = currentLine.trimEnd();
+        let extra = '';
+        if (trimmed.endsWith('{')) {
+            extra = '    ';
+        }
+
+        const insertion = '\n' + indent + extra;
+        textarea.value = textarea.value.substring(0, start) + insertion + textarea.value.substring(textarea.selectionEnd);
+        textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+        handleEditorInput();
+    }
+
+    // Auto-close brackets
+    const bracketPairs = { '{': '}', '(': ')', '[': ']', '"': '"', "'": "'" };
+    if (bracketPairs[e.key] && !e.ctrlKey && !e.altKey) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        // Only auto-close if nothing selected
+        if (start === end) {
+            e.preventDefault();
+            const closing = bracketPairs[e.key];
+            textarea.value = textarea.value.substring(0, start) + e.key + closing + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + 1;
+            handleEditorInput();
+        }
+    }
+}
+
+function handleEditorClick() {
+    updateLineNumbers();
+    updateStatusBar();
+    if (State.explanationMode === 'line') {
+        handleCursorMove();
+    }
+}
+
+function updateStatusBar() {
+    const line = getCursorLineNumber();
+    const col = getCursorColumn();
+    const statusCursor = document.getElementById('statusCursor');
+    if (statusCursor) {
+        statusCursor.querySelector('span').textContent = `Ln ${line}, Col ${col}`;
+    }
+}
+
+function updateTitleBar() {
+    const tab = State.tabs.get(State.activeTabId);
+    if (!tab) return;
+
+    const titleText = document.getElementById('titleFileText');
+    const unsavedDot = document.getElementById('titleUnsavedDot');
+
+    if (titleText) titleText.textContent = tab.name;
+    if (unsavedDot) unsavedDot.style.display = tab.dirty ? 'inline' : 'none';
+
+    document.title = (tab.dirty ? '● ' : '') + tab.name + ' — Sensei';
+}
+
+
+// ============================================================================
+// 6. EXPLANATION ENGINE
+// ============================================================================
+
+function toggleExplainMode() {
+    if (State.explanationMode === 'line') {
+        State.explanationMode = 'idle';
+        updateExplanationUI();
+        // Remove active state from explain button
+        document.getElementById('lineExplain')?.classList.remove('explain-active');
+    } else {
+        State.explanationMode = 'line';
+        updateExplanationUI();
+        handleCursorMove();
+        document.getElementById('lineExplain')?.classList.add('explain-active');
+
+        // Force open right panel showing explanations
+        showRightPanelView('explain');
+    }
+}
+
+function updateExplanationUI() {
+    const idleEl = document.getElementById('explainIdle');
+    const lineEl = document.getElementById('lineExplanations');
+
+    if (State.explanationMode === 'idle') {
+        if (idleEl) idleEl.style.display = 'flex';
+        if (lineEl) lineEl.style.display = 'none';
+    } else {
+        if (idleEl) idleEl.style.display = 'none';
+        if (lineEl) lineEl.style.display = 'block';
+    }
 }
 
 async function handleCursorMove() {
-    if (explanationMode !== 'line') return;
+    if (State.explanationMode !== 'line') return;
 
-    const textarea = document.getElementById('codeTextarea');
     const container = document.getElementById('lineExplanations');
-    const currentLineNum = getCursorLineNumber(textarea);
+    if (!container) return;
 
-    // Clear debounce timer
-    if (activeLineTimeout) clearTimeout(activeLineTimeout);
-
-    // Get content of current line
-    const lines = textarea.value.split('\n');
+    const currentLineNum = getCursorLineNumber();
+    const code = getEditorCode();
+    const lines = code.split('\n');
     const lineContent = lines[currentLineNum - 1]?.trim();
 
-    // Don't re-explain if we're on the same line and content hasn't changed meaningfully
-    // Actually, we WANT to re-explain if they type more (e.g. "int" -> "Variable", "int a" -> "Variable named a")
-    // So we just rely on debounce.
-
-    lastExplainedLine = currentLineNum; // Keep track but don't block
-
+    if (State.explainTimeout) clearTimeout(State.explainTimeout);
 
     if (!lineContent || lineContent.startsWith('//') || lineContent.length < 2) {
-        container.innerHTML = `<div style="padding: 20px; color: #888; text-align: center;">Waiting for code on line ${currentLineNum}...</div>`;
+        container.innerHTML = `<div class="explain-idle" style="height:auto; padding: 20px;">
+            <p>Line ${currentLineNum} — waiting for code...</p>
+        </div>`;
         return;
     }
 
-    // Debounce: Wait 300ms after last move/type
-    activeLineTimeout = setTimeout(async () => {
-        container.innerHTML = `<div style="padding: 20px; text-align: center;"><span class="loading-spinner">Analyzing Line ${currentLineNum}...</span></div>`;
+    State.explainTimeout = setTimeout(async () => {
+        container.innerHTML = `<div class="explain-card" style="border-left-color: var(--warning);">
+            <div class="explain-card-body"><span class="message-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> Analyzing line ${currentLineNum}...</div>
+        </div>`;
 
         try {
             const response = await fetch('http://localhost:8000/explain', {
@@ -236,245 +728,63 @@ async function handleCursorMove() {
             });
             const data = await response.json();
 
-            // Escape HTML in the explanation so <iostream> doesn't vanish
-            const safeExplanation = data.explanation
+            const safeSummary = data.summary
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;")
-                .replace(/\n/g, "<br>");
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-            container.innerHTML = `
-                <div class="line-explanation" style="border-left: 4px solid var(--accent-color); animation: fadeIn 0.3s ease;">
-                    <div class="line-explanation-header">
-                        <span class="line-badge">Line ${currentLineNum}</span>
-                        <code class="line-code">${lineContent.substring(0, 40)}${lineContent.length > 40 ? '...' : ''}</code>
-                    </div>
-                    <div class="line-explanation-content" style="font-size: 1.1rem; line-height: 1.6;">
-                        ${safeExplanation}
-                    </div>
-                </div>`;
+            const safeDetail = data.detail
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;")
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
 
+            const codePreview = lineContent.length > 50 ? lineContent.substring(0, 50) + '...' : lineContent;
+
+            const bodyHtml = `<p style="font-size: var(--font-size-sm); line-height: 1.5; color: var(--text-active);"><strong>${safeSummary}</strong></p>
+                            <p style="margin-top: 8px; color: var(--text-primary); line-height: 1.5; font-size: var(--font-size-sm);">${safeDetail}</p>
+                            ${data.url ? `<a href="${data.url}" target="_blank" class="explain-card-link" style="margin-top: 10px; display: inline-flex; align-items: center; gap: 4px; color: var(--text-link); text-decoration: none; font-size: var(--font-size-xs);">
+                                <i data-lucide="external-link" style="width: 12px; height: 12px;"></i> Read C++ Documentation
+                            </a>` : ''}`;
+
+            container.innerHTML = `<div class="explain-card">
+                <div class="explain-card-header">
+                    <span class="explain-line-badge">Line ${currentLineNum}</span>
+                    <span class="explain-line-code">${escapeHtml(codePreview)}</span>
+                </div>
+                <div class="explain-card-body">${bodyHtml}</div>
+            </div>`;
+            initLucide();
         } catch (error) {
-            container.innerHTML = `<div style="color: red; padding: 20px;">Error: ${error.message}</div>`;
+            container.innerHTML = `<div class="explain-card" style="border-left-color: var(--danger);">
+                <div class="explain-card-body" style="color: var(--danger);">Error: ${error.message}. Is the server running?</div>
+            </div>`;
         }
     }, 300);
 }
 
-function handleFullExplain() {
-    explanationMode = 'full';
-    updateExplanationPanel();
-    showToast('Full explanation activated', 'Generating comprehensive code analysis... (Note: Full explain static for demo)');
-    // Keep static full explanation for this specific demo or upgrade to AI if needed later
-}
 
-function handleCopyCode() {
-    const code = document.getElementById('codeTextarea').value;
-    navigator.clipboard.writeText(code).then(() => {
-        showToast('Code copied!', 'Code has been copied to your clipboard.');
-    });
-}
-
-function handleDownloadCode() {
-    const code = document.getElementById('codeTextarea').value;
-    const element = document.createElement('a');
-    const file = new Blob([code], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = 'code.cpp';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-}
-
-function updateLineNumbers() {
-    const textarea = document.getElementById('codeTextarea');
-    const lineNumbers = document.getElementById('lineNumbers');
-    const lines = textarea.value.split('\n');
-
-    lineNumbers.innerHTML = lines.map((_, index) =>
-        `<div style="text-align: right; padding-right: 0.5rem; line-height: 1.5;">${index + 1}</div>`
-    ).join('');
-}
-
-function syncLineNumbersScroll() {
-    const textarea = document.getElementById('codeTextarea');
-    const lineNumbers = document.getElementById('lineNumbers');
-    lineNumbers.scrollTop = textarea.scrollTop;
-}
-
-// Explanation Panel Functions
-function toggleBeginnerMode() {
-    isBeginnerMode = !isBeginnerMode;
-    updateBeginnerModeButton();
-    // Re-fetch explanations if needed, or just toggle style
-    updateExplanationPanel();
-
-    const mode = isBeginnerMode ? 'beginner' : 'advanced';
-    showToast(`Switched to ${mode} mode`, 'Explanations will adjust on next analysis!');
-}
-
-function updateBeginnerModeButton() {
-    const button = document.getElementById('toggleBeginnerMode');
-    const beginnerIcon = button.querySelector('.beginner-icon');
-    const advancedIcon = button.querySelector('.advanced-icon');
-    const modeText = button.querySelector('.mode-text');
-
-    if (isBeginnerMode) {
-        button.className = 'btn btn-accent btn-sm';
-        beginnerIcon.style.display = 'block';
-        advancedIcon.style.display = 'none';
-        modeText.textContent = 'Beginner Mode';
-    } else {
-        button.className = 'btn btn-secondary btn-sm';
-        beginnerIcon.style.display = 'none';
-        advancedIcon.style.display = 'block';
-        modeText.textContent = 'Advanced Mode';
-    }
-}
-
-function updateExplanationPanel() {
-    const title = document.getElementById('explanationTitle');
-    const badge = document.getElementById('explanationBadge');
-    const idleState = document.getElementById('explanationIdle');
-    const lineExplanations = document.getElementById('lineExplanations');
-    const fullExplanations = document.getElementById('fullExplanations');
-
-    // Hide all content areas
-    idleState.style.display = 'none';
-    lineExplanations.style.display = 'none';
-    fullExplanations.style.display = 'none';
-
-    if (explanationMode === 'idle') {
-        title.textContent = 'AI Explanations';
-        badge.style.display = 'none';
-        idleState.style.display = 'flex';
-    } else if (explanationMode === 'line') {
-        title.textContent = 'Line-by-Line Explanation';
-        badge.textContent = 'Interactive';
-        badge.style.display = 'inline-block';
-        badge.className = 'explanation-badge';
-        lineExplanations.style.display = 'block';
-        // renderLineExplanations(); // No longer calling static render
-    } else if (explanationMode === 'full') {
-        title.textContent = 'Full Code Explanation';
-        badge.textContent = 'Comprehensive';
-        badge.style.display = 'inline-block';
-        badge.className = 'explanation-badge';
-        fullExplanations.style.display = 'block';
-        renderFullExplanations();
-    }
-}
-
-// renderLineExplanations REMOVED/REPLACED by logic inside handleLineExplain
-
-
-function renderFullExplanations() {
-    const container = document.getElementById('fullExplanations');
-
-    const explanations = [
-        {
-            id: "overview",
-            title: "What This Program Does",
-            icon: "sparkles",
-            content: isBeginnerMode
-                ? "This C++ program calculates and prints the first 10 Fibonacci numbers. The Fibonacci sequence is famous in math and nature - each number is the sum of the two before it: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34... You can see this pattern in sunflower seeds, pinecones, and even galaxies!"
-                : "Implementation of the Fibonacci sequence using recursive algorithm with exponential time complexity O(2^n). Demonstrates basic C++ syntax, recursion, and I/O operations."
-        },
-        {
-            id: "structure",
-            title: "Program Structure",
-            icon: "code",
-            content: isBeginnerMode
-                ? "Every C++ program has the same basic parts: 1) Include statements (like importing tools), 2) The 'main' function (where the program starts), and 3) Other functions we create. This program also has a 'fibonacci' function that we created to do the math calculations."
-                : "Standard C++ program structure with preprocessor directives, namespace usage, function declarations, and the main entry point. Follows typical C++ organizational patterns."
-        },
-        {
-            id: "algorithm",
-            title: "How the Fibonacci Function Works",
-            icon: "brain",
-            content: isBeginnerMode
-                ? "The fibonacci function is 'recursive' - it calls itself! Think of it like Russian nesting dolls. To find F(5), it needs F(4) and F(3). To find F(4), it needs F(3) and F(2), and so on, until it reaches F(0)=0 and F(1)=1. Then it builds the answer back up: F(2)=1, F(3)=2, F(4)=3, F(5)=5."
-                : "Classic recursive approach with base cases (n ≤ 1) and recursive cases (fibonacci(n-1) + fibonacci(n-2)). Demonstrates divide-and-conquer paradigm with exponential time complexity."
-        },
-        {
-            id: "improvements",
-            title: "Making It Better",
-            icon: "lightbulb",
-            content: isBeginnerMode
-                ? "This code is great for learning, but it's slow for big numbers because it recalculates the same values many times. Imagine asking 'What's 2+2?' a thousand times instead of remembering the answer! We could make it faster by storing previous answers or using a different approach."
-                : "Consider memoization or dynamic programming to reduce time complexity from O(2^n) to O(n). Iterative approach would be more memory efficient. Could also add input validation and error handling for production code."
-        }
-    ];
-
-    container.innerHTML = explanations.map(item => `
-        <div class="full-explanation">
-            <button class="full-explanation-trigger" onclick="toggleFullExplanation('${item.id}')">
-                <div class="full-explanation-header">
-                    <div class="full-explanation-title">
-                        <i data-lucide="${item.icon}"></i>
-                        ${item.title}
-                    </div>
-                    <i data-lucide="chevron-right" id="chevron-${item.id}"></i>
-                </div>
-            </button>
-            <div class="full-explanation-content" id="content-${item.id}" style="display: none;">
-                ${item.content}
-            </div>
-        </div>
-    `).join('');
-
-    // Re-initialize Lucide icons for the new content
-    setTimeout(initializeLucideIcons, 0);
-}
-
-function toggleFullExplanation(id) {
-    const content = document.getElementById(`content-${id}`);
-    const chevron = document.getElementById(`chevron-${id}`);
-
-    if (content.style.display === 'none') {
-        content.style.display = 'block';
-        chevron.setAttribute('data-lucide', 'chevron-down');
-    } else {
-        content.style.display = 'none';
-        chevron.setAttribute('data-lucide', 'chevron-right');
-    }
-
-    // Re-initialize Lucide icons for the updated chevron
-    setTimeout(initializeLucideIcons, 0);
-}
-
-// AI Chatbox Functions
-function toggleChatbox() {
-    const chatbox = document.getElementById('aiChatbox');
-    const expandIcon = document.querySelector('.expand-icon');
-    const collapseIcon = document.querySelector('.collapse-icon');
-
-    isChatboxExpanded = !isChatboxExpanded;
-
-    if (isChatboxExpanded) {
-        chatbox.classList.remove('collapsed');
-        expandIcon.style.display = 'none';
-        collapseIcon.style.display = 'block';
-    } else {
-        chatbox.classList.add('collapsed');
-        expandIcon.style.display = 'block';
-        collapseIcon.style.display = 'none';
-    }
-}
+// ============================================================================
+// 7. AI ASSISTANT
+// ============================================================================
 
 async function sendMessage() {
     const input = document.getElementById('chatInput');
     const message = input.value.trim();
-
     if (!message) return;
 
-    // Add user message
     addChatMessage(message, 'user');
     input.value = '';
 
-    // Send to Backend AI
-    addChatMessage('<span class="loading-spinner">Thinking...</span>', 'ai', 'loading-msg');
+    // Add loading
+    const loadingId = 'loading-' + Date.now();
+    addChatMessage(null, 'ai', loadingId, true);
 
     try {
         const response = await fetch('http://localhost:8000/chat', {
@@ -482,77 +792,123 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message })
         });
-
         const data = await response.json();
 
-        // Remove loading message
-        const loadingMsg = document.getElementById('loading-msg');
-        if (loadingMsg) loadingMsg.remove();
+        // Remove loading
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
 
         addChatMessage(data.response, 'ai');
-
     } catch (e) {
-        const loadingMsg = document.getElementById('loading-msg');
-        if (loadingMsg) loadingMsg.remove();
-        addChatMessage("Error connecting to AI: " + e.message, 'ai');
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        addChatMessage('Error connecting to AI: ' + e.message, 'ai');
     }
 }
 
+function addChatMessage(content, sender, id = null, isLoading = false) {
+    const container = document.getElementById('chatMessages');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `chat-message ${sender}-message`;
+    if (id) msgDiv.id = id;
+
+    const avatarIcon = sender === 'ai' ? 'bot' : 'user';
+
+    if (isLoading) {
+        msgDiv.innerHTML = `
+            <div class="message-avatar"><i data-lucide="${avatarIcon}"></i></div>
+            <div class="message-content">
+                <div class="message-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+            </div>`;
+    } else {
+        const rendered = sender === 'ai' ? renderMarkdown(content) : `<p>${escapeHtml(content)}</p>`;
+        msgDiv.innerHTML = `
+            <div class="message-avatar"><i data-lucide="${avatarIcon}"></i></div>
+            <div class="message-content">${rendered}</div>`;
+    }
+
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+    initLucide();
+}
+
+function renderMarkdown(text) {
+    if (!text) return '<p></p>';
+
+    // Escape HTML first
+    let html = escapeHtml(text);
+
+    // Code blocks (```...```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code>${code.trim()}</code><button class="copy-code-btn" onclick="copyCodeBlock(this)">Copy</button></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Bold
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+    // Lists
+    html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+    // Numbered lists
+    html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+    // Paragraphs
+    html = html.split('\n\n').map(p => {
+        p = p.trim();
+        if (!p) return '';
+        if (p.startsWith('<pre>') || p.startsWith('<ul>') || p.startsWith('<ol>') || p.startsWith('<li>')) return p;
+        return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+
+    return html || '<p></p>';
+}
+
+function copyCodeBlock(btn) {
+    const pre = btn.closest('pre');
+    const code = pre.querySelector('code');
+    navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    });
+}
+
 async function loadStarterCode(type) {
-    showToast('Loading', 'Fetching starter code...');
     try {
         const response = await fetch(`http://localhost:8000/starter-code/${type}`);
         const data = await response.json();
 
-        const textarea = document.getElementById('codeTextarea');
-        textarea.value = data.code;
-        updateLineNumbers();
-
-        // Trigger explanation update if in line mode
-        if (explanationMode === 'line') {
-            handleCursorMove();
-        }
-
-        showToast('Loaded', 'Starter code inserted!');
-
-        // Close chat if it's open covering the code? Optional.
-        // if(isChatboxExpanded && window.innerWidth < 800) toggleChatbox();
-
+        setEditorCode(data.code);
+        checkEditorEmptyState();
+        TabManager.markDirty(State.activeTabId);
+        showToast('Loaded', `${type} starter code inserted`);
     } catch (e) {
         showToast('Error', 'Failed to load starter code');
     }
 }
 
-function addChatMessage(message, sender, id = null) {
-    const messagesContainer = document.getElementById('chatMessages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `chat-message ${sender}-message`;
-    if (id) messageDiv.id = id;
-
-    const avatarIcon = sender === 'ai' ? 'bot' : 'user';
-
-    messageDiv.innerHTML = `
-        <div class="message-avatar">
-            <i data-lucide="${avatarIcon}"></i>
-        </div>
-        <div class="message-content">
-            <p>${message}</p>
-        </div>
-    `;
-
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-    // Re-initialize Lucide icons for the new message
-    setTimeout(initializeLucideIcons, 0);
-}
-
 function handleQuickAction(action) {
+    const codeContext = getEditorCode();
+
     const actions = {
-        'step-by-step': 'Can you explain my C++ code step by step?',
-        'optimize': 'How can I optimize my Fibonacci code?',
-        'find-errors': 'Are there any errors in my C++ code?'
+        'step-by-step': 'Can you explain this C++ code step by step?\n\n```cpp\n' + codeContext + '\n```',
+        'optimize': 'How can I optimize this C++ code?\n\n```cpp\n' + codeContext + '\n```',
+        'find-errors': 'Are there any errors or issues in this C++ code?\n\n```cpp\n' + codeContext + '\n```',
+        'starter-io': null,
+        'starter-array': null,
+        'starter-string': null,
     };
+
+    if (action.startsWith('starter-')) {
+        loadStarterCode(action.replace('starter-', ''));
+        return;
+    }
 
     const message = actions[action];
     if (message) {
@@ -561,72 +917,1254 @@ function handleQuickAction(action) {
     }
 }
 
-// Toast Notification System
+
+// ============================================================================
+// 8. TERMINAL / CONSOLE
+// ============================================================================
+
+async function handleRunCode() {
+    const code = getEditorCode();
+    const consoleOutput = document.getElementById('consoleOutput');
+    const consoleInput = document.getElementById('consoleInput');
+
+    // Show terminal panel
+    showBottomPanel();
+
+    // Clear output
+    consoleOutput.innerHTML = '';
+    consoleInput.value = '';
+
+    // Close existing socket
+    if (State.socket) {
+        State.socket.close();
+    }
+
+    appendToTerminal('Compiling and running...\n', 'compile-msg');
+
+    try {
+        State.socket = new WebSocket('ws://localhost:8000/ws/run');
+
+        State.socket.onopen = function () {
+            State.socket.send(JSON.stringify({ code: code }));
+            updateConnectionStatus(true);
+        };
+
+        State.socket.onmessage = function (event) {
+            appendToTerminal(event.data);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        };
+
+        State.socket.onclose = function () {
+            appendToTerminal('\n[Disconnected]', 'compile-msg');
+            updateConnectionStatus(false);
+        };
+
+        State.socket.onerror = function () {
+            appendToTerminal('\n[Connection Error]', 'error-msg');
+            updateConnectionStatus(false);
+        };
+    } catch (e) {
+        appendToTerminal('Error connecting: ' + e.message, 'error-msg');
+    }
+}
+
+function sendConsoleInput() {
+    const inputField = document.getElementById('consoleInput');
+    const text = inputField.value;
+
+    if (State.socket && State.socket.readyState === WebSocket.OPEN) {
+        State.socket.send(text);
+        appendToTerminal(text + '\n', 'success-msg');
+        inputField.value = '';
+    } else {
+        showToast('Error', 'Program is not running');
+    }
+}
+
+function appendToTerminal(text, className = '') {
+    const output = document.getElementById('consoleOutput');
+    if (!output) return;
+
+    if (className) {
+        const span = document.createElement('span');
+        span.className = className;
+        span.textContent = text;
+        output.appendChild(span);
+    } else {
+        output.appendChild(document.createTextNode(text));
+    }
+    output.scrollTop = output.scrollHeight;
+}
+
+function clearTerminal() {
+    const output = document.getElementById('consoleOutput');
+    if (output) {
+        output.innerHTML = '<span class="compile-msg">Terminal cleared.</span>\n';
+    }
+}
+
+function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('statusConnection');
+    if (!statusEl) return;
+    const icon = statusEl.querySelector('.status-icon');
+    const text = statusEl.querySelector('span:last-child');
+    if (connected) {
+        icon.style.color = '#4ec9b0';
+        text.textContent = 'Connected';
+    } else {
+        icon.style.color = '#858585';
+        text.textContent = 'Disconnected';
+    }
+}
+
+
+// ============================================================================
+// 9. KEYBOARD SHORTCUTS
+// ============================================================================
+
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function (e) {
+        const key = e.key.toLowerCase();
+        const ctrl = e.ctrlKey || e.metaKey;
+        const shift = e.shiftKey;
+
+        // Ctrl+S — Save
+        if (ctrl && key === 's' && !shift) {
+            e.preventDefault();
+            saveCurrentFile();
+        }
+
+        // Ctrl+Shift+S — Save As
+        if (ctrl && shift && key === 's') {
+            e.preventDefault();
+            saveFileAs();
+        }
+
+        // Ctrl+Enter — Run
+        if (ctrl && key === 'enter') {
+            e.preventDefault();
+            handleRunCode();
+        }
+
+        // F5 — Run
+        if (key === 'f5') {
+            e.preventDefault();
+            handleRunCode();
+        }
+
+        // Ctrl+B — Toggle Sidebar
+        if (ctrl && key === 'b' && !shift) {
+            e.preventDefault();
+            toggleSidebar();
+        }
+
+        // Ctrl+` — Toggle Terminal
+        if (ctrl && key === '`') {
+            e.preventDefault();
+            toggleBottomPanel();
+        }
+
+        // Ctrl+J — Toggle Bottom Panel
+        if (ctrl && key === 'j' && !shift) {
+            e.preventDefault();
+            toggleBottomPanel();
+        }
+
+        // Ctrl+Shift+A — Toggle AI Panel
+        if (ctrl && shift && key === 'a') {
+            e.preventDefault();
+            toggleRightPanel('ai');
+        }
+
+        // Ctrl+Shift+E — Focus Explorer
+        if (ctrl && shift && key === 'e') {
+            e.preventDefault();
+            showSidebarView('explorer');
+        }
+
+        // Ctrl+N — New file
+        if (ctrl && key === 'n' && !shift) {
+            e.preventDefault();
+            FileExplorer.createFile();
+        }
+
+        // Ctrl+/ — Toggle comment
+        if (ctrl && key === '/') {
+            e.preventDefault();
+            toggleComment();
+        }
+
+        // Escape — close menus, context menu
+        if (key === 'escape') {
+            closeAllMenus();
+            document.getElementById('contextMenu')?.classList.remove('active');
+        }
+    });
+}
+
+function toggleComment() {
+    if (window.editor) {
+        window.editor.trigger('keyboard', 'editor.action.commentLine', null);
+        return;
+    }
+    const textarea = document.getElementById('codeTextarea');
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const value = textarea.value;
+
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const lineEnd = value.indexOf('\n', end);
+    const actualEnd = lineEnd === -1 ? value.length : lineEnd;
+
+    const line = value.substring(lineStart, actualEnd);
+    const trimmed = line.trimStart();
+
+    let newLine;
+    if (trimmed.startsWith('//')) {
+        // Uncomment
+        newLine = line.replace(/\/\/\s?/, '');
+    } else {
+        // Comment
+        const leadingSpaces = line.match(/^\s*/)[0];
+        newLine = leadingSpaces + '// ' + trimmed;
+    }
+
+    textarea.value = value.substring(0, lineStart) + newLine + value.substring(actualEnd);
+    textarea.selectionStart = lineStart;
+    textarea.selectionEnd = lineStart + newLine.length;
+    handleEditorInput();
+}
+
+
+// ============================================================================
+// 10. PANEL MANAGEMENT
+// ============================================================================
+
+function toggleSidebar() {
+    State.sidebarVisible = !State.sidebarVisible;
+    const container = document.getElementById('ideContainer');
+    container.classList.toggle('sidebar-hidden', !State.sidebarVisible);
+
+    // Update activity bar button
+    document.getElementById('actExplorer')?.classList.toggle('active', State.sidebarVisible);
+}
+
+function showSidebarView(view) {
+    State.sidebarVisible = true;
+    const container = document.getElementById('ideContainer');
+    container.classList.remove('sidebar-hidden');
+    document.getElementById('actExplorer')?.classList.add('active');
+}
+
+function toggleRightPanel(view = 'ai') {
+    const container = document.getElementById('ideContainer');
+
+    if (State.rightPanelVisible && State.rightPanelView === view) {
+        // Collapse
+        State.rightPanelVisible = false;
+        container.classList.add('right-panel-hidden');
+
+        // Deactivate activity bar buttons
+        document.getElementById('actAI')?.classList.remove('active');
+        document.getElementById('actExplain')?.classList.remove('active');
+    } else {
+        // Show or switch
+        showRightPanelView(view);
+    }
+}
+
+function showRightPanelView(view) {
+    State.rightPanelView = view;
+    State.rightPanelVisible = true;
+
+    const container = document.getElementById('ideContainer');
+    container.classList.remove('right-panel-hidden');
+
+    const aiView = document.getElementById('aiAssistantView');
+    const explainView = document.getElementById('explainView');
+
+    if (view === 'ai') {
+        if (aiView) aiView.style.display = 'flex';
+        if (explainView) explainView.style.display = 'none';
+    } else if (view === 'explain') {
+        if (aiView) aiView.style.display = 'none';
+        if (explainView) explainView.style.display = 'flex';
+    }
+
+    // Update activity bar active status
+    document.getElementById('actAI')?.classList.toggle('active', view === 'ai');
+    document.getElementById('actExplain')?.classList.toggle('active', view === 'explain');
+}
+
+function toggleBottomPanel() {
+    State.bottomPanelVisible = !State.bottomPanelVisible;
+    const panel = document.getElementById('panelBottom');
+    panel.classList.toggle('collapsed', !State.bottomPanelVisible);
+}
+
+function showBottomPanel() {
+    State.bottomPanelVisible = true;
+    const panel = document.getElementById('panelBottom');
+    panel.classList.remove('collapsed');
+}
+
+
+// ============================================================================
+// PANEL RESIZE
+// ============================================================================
+
+function setupPanelResize() {
+    // Sidebar resize
+    const sidebarResize = document.getElementById('sidebarResize');
+    if (sidebarResize) {
+        setupResize(sidebarResize, 'sidebar', 'horizontal');
+    }
+
+    // Bottom panel resize
+    const bottomResize = document.getElementById('panelBottomResize');
+    if (bottomResize) {
+        setupResize(bottomResize, 'bottom', 'vertical');
+    }
+
+    // Right panel resize
+    const rightResize = document.getElementById('panelRightResize');
+    if (rightResize) {
+        setupResize(rightResize, 'right', 'horizontal');
+    }
+}
+
+function setupResize(handle, target, direction) {
+    let startPos = 0;
+    let startSize = 0;
+
+    const onMouseDown = (e) => {
+        e.preventDefault();
+        State.isResizing = true;
+        State.resizeTarget = target;
+        handle.classList.add('active');
+        document.body.classList.add('is-resizing');
+        document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
+        document.body.style.userSelect = 'none';
+
+        if (direction === 'horizontal') {
+            startPos = e.clientX;
+            if (target === 'sidebar') {
+                startSize = document.getElementById('sidebar').offsetWidth;
+            } else if (target === 'right') {
+                startSize = document.getElementById('panelRight').offsetWidth;
+            }
+        } else {
+            startPos = e.clientY;
+            startSize = document.getElementById('panelBottom').offsetHeight;
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
+    const onMouseMove = (e) => {
+        if (!State.isResizing) return;
+
+        if (direction === 'horizontal') {
+            const diff = e.clientX - startPos;
+            let newSize;
+
+            if (target === 'sidebar') {
+                newSize = Math.max(170, Math.min(500, startSize + diff));
+                document.getElementById('sidebar').style.width = newSize + 'px';
+                State.sidebarWidth = newSize;
+            } else if (target === 'right') {
+                newSize = Math.max(260, Math.min(600, startSize - diff));
+                document.getElementById('panelRight').style.width = newSize + 'px';
+                State.rightPanelWidth = newSize;
+            }
+        } else {
+            const diff = startPos - e.clientY;
+            const newSize = Math.max(120, Math.min(500, startSize + diff));
+            document.getElementById('panelBottom').style.height = newSize + 'px';
+            State.bottomPanelHeight = newSize;
+        }
+    };
+
+    const onMouseUp = () => {
+        State.isResizing = false;
+        State.resizeTarget = null;
+        handle.classList.remove('active');
+        document.body.classList.remove('is-resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    handle.addEventListener('mousedown', onMouseDown);
+}
+
+
+// ============================================================================
+// 11. MENU SYSTEM
+// ============================================================================
+
+function setupMenuSystem() {
+    const menus = {
+        'menuFile': 'fileMenuDropdown',
+        'menuView': 'viewMenuDropdown',
+        'menuRun': 'runMenuDropdown',
+        'menuHelp': 'helpMenuDropdown',
+    };
+
+    Object.entries(menus).forEach(([btnId, menuId]) => {
+        const btn = document.getElementById(btnId);
+        const menu = document.getElementById(menuId);
+        if (!btn || !menu) return;
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = menu.classList.contains('active');
+            closeAllMenus();
+            if (!isOpen) {
+                menu.style.left = btn.getBoundingClientRect().left + 'px';
+                menu.classList.add('active');
+            }
+        });
+    });
+
+    // Close menus on outside click
+    document.addEventListener('click', () => {
+        closeAllMenus();
+        document.getElementById('contextMenu')?.classList.remove('active');
+    });
+
+    // Menu actions
+    document.getElementById('menuNewFile')?.addEventListener('click', () => { closeAllMenus(); FileExplorer.createFile(); });
+    document.getElementById('menuOpenFile')?.addEventListener('click', () => { closeAllMenus(); openFileDialog(); });
+    document.getElementById('menuOpenFolder')?.addEventListener('click', () => { closeAllMenus(); FileExplorer.openFolder(); });
+    document.getElementById('menuSave')?.addEventListener('click', () => { closeAllMenus(); saveCurrentFile(); });
+    document.getElementById('menuSaveAs')?.addEventListener('click', () => { closeAllMenus(); saveFileAs(); });
+    document.getElementById('menuDownload')?.addEventListener('click', () => { closeAllMenus(); handleDownloadCode(); });
+    document.getElementById('menuToggleSidebar')?.addEventListener('click', () => { closeAllMenus(); toggleSidebar(); });
+    document.getElementById('menuToggleTerminal')?.addEventListener('click', () => { closeAllMenus(); toggleBottomPanel(); });
+    document.getElementById('menuToggleAI')?.addEventListener('click', () => { closeAllMenus(); toggleRightPanel(); });
+    document.getElementById('menuToggleTheme')?.addEventListener('click', () => { closeAllMenus(); toggleTheme(); });
+    document.getElementById('menuRunCode')?.addEventListener('click', () => { closeAllMenus(); handleRunCode(); });
+
+    // Context menu actions
+    document.querySelectorAll('#contextMenu .context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            const menu = document.getElementById('contextMenu');
+            menu.classList.remove('active');
+
+            if (action === 'new-file') FileExplorer.createFile();
+            if (action === 'new-folder') FileExplorer.createFolder();
+            // rename/delete would need the target item reference
+        });
+    });
+}
+
+function closeAllMenus() {
+    document.querySelectorAll('.menu-dropdown').forEach(m => m.classList.remove('active'));
+}
+
+async function openFileDialog() {
+    try {
+        if ('showOpenFilePicker' in window) {
+            const [fileHandle] = await window.showOpenFilePicker({
+                types: [{
+                    description: 'C++ Files',
+                    accept: { 'text/x-c++src': ['.cpp', '.cc', '.cxx', '.h', '.hpp'] }
+                }, {
+                    description: 'All Files',
+                    accept: { 'text/plain': ['*'] }
+                }]
+            });
+            const file = await fileHandle.getFile();
+            const content = await file.text();
+            const tabId = 'file-' + file.name.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+            TabManager.openTab(tabId, file.name, content, fileHandle);
+        } else {
+            // Fallback: use hidden file input
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.cpp,.cc,.cxx,.h,.hpp,.c,.txt';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const content = await file.text();
+                    const tabId = 'file-' + file.name.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+                    TabManager.openTab(tabId, file.name, content, null);
+                }
+            };
+            input.click();
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            showToast('Error', 'Failed to open file: ' + e.message);
+        }
+    }
+}
+
+async function saveCurrentFile() {
+    const tab = State.tabs.get(State.activeTabId);
+    if (!tab) return;
+
+    // Save current textarea content
+    tab.content = getEditorCode();
+
+    if (tab.fileHandle) {
+        try {
+            const writable = await tab.fileHandle.createWritable();
+            await writable.write(tab.content);
+            await writable.close();
+            TabManager.markClean(State.activeTabId);
+            showToast('Saved', tab.name);
+        } catch (e) {
+            showToast('Error', 'Failed to save: ' + e.message);
+        }
+    } else {
+        // No file handle — save as
+        await saveFileAs();
+    }
+}
+
+async function saveFileAs() {
+    const tab = State.tabs.get(State.activeTabId);
+    if (!tab) return;
+
+    tab.content = getEditorCode();
+
+    try {
+        if ('showSaveFilePicker' in window) {
+            const fileHandle = await window.showSaveFilePicker({
+                suggestedName: tab.name,
+                types: [{
+                    description: 'C++ Source',
+                    accept: { 'text/x-c++src': ['.cpp'] }
+                }]
+            });
+            const writable = await fileHandle.createWritable();
+            await writable.write(tab.content);
+            await writable.close();
+
+            tab.fileHandle = fileHandle;
+            tab.name = fileHandle.name;
+            TabManager.markClean(State.activeTabId);
+            TabManager.renderTabs();
+            updateTitleBar();
+            showToast('Saved', tab.name);
+        } else {
+            // Fallback download
+            handleDownloadCode();
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            showToast('Error', 'Failed to save: ' + e.message);
+        }
+    }
+}
+
+
+// ============================================================================
+// 12. THEME
+// ============================================================================
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('sensei-theme');
+    if (savedTheme === 'light') {
+        document.body.classList.remove('dark-mode');
+        document.body.classList.add('light-mode');
+        State.isDarkMode = false;
+    } else {
+        document.body.classList.remove('light-mode');
+        document.body.classList.add('dark-mode');
+        State.isDarkMode = true;
+    }
+}
+
+function toggleTheme() {
+    State.isDarkMode = !State.isDarkMode;
+    document.body.classList.toggle('dark-mode', State.isDarkMode);
+    document.body.classList.toggle('light-mode', !State.isDarkMode);
+    localStorage.setItem('sensei-theme', State.isDarkMode ? 'dark' : 'light');
+}
+
+
+// ============================================================================
+// 13. NOTIFICATIONS
+// ============================================================================
+
 function showToast(title, description) {
     const container = document.getElementById('toastContainer');
+    if (!container) return;
+
     const toast = document.createElement('div');
     toast.className = 'toast';
-
     toast.innerHTML = `
-        <div class="toast-header">${title}</div>
-        <div class="toast-description">${description}</div>
+        <div class="toast-header">${escapeHtml(title)}</div>
+        <div class="toast-description">${escapeHtml(description || '')}</div>
     `;
-
     container.appendChild(toast);
 
-    // Auto remove after 3 seconds
     setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 2500);
+}
+
+
+// ============================================================================
+// 14. UTILITIES
+// ============================================================================
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function handleCopyCode() {
+    const code = getEditorCode();
+    navigator.clipboard.writeText(code).then(() => {
+        showToast('Copied', 'Code copied to clipboard');
+    });
+}
+
+function handleDownloadCode() {
+    const tab = State.tabs.get(State.activeTabId);
+    const code = getEditorCode();
+    const element = document.createElement('a');
+    const file = new Blob([code], { type: 'text/plain' });
+    element.href = URL.createObjectURL(file);
+    element.download = tab ? tab.name : 'code.cpp';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    showToast('Downloaded', element.download);
+}
+
+async function checkServerConnection() {
+    try {
+        const response = await fetch('http://localhost:8000/explain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ line: 'int x;' })
+        });
+        if (response.ok) {
+            updateConnectionStatus(true);
         }
-    }, 3000);
+    } catch (e) {
+        updateConnectionStatus(false);
+    }
 }
 
-// Smooth scroll navigation
-function setupSmoothScroll() {
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
+
+// ============================================================================
+// EVENT LISTENERS SETUP
+// ============================================================================
+
+function setupEventListeners() {
+    // Editor
+    const textarea = document.getElementById('codeTextarea');
+    if (textarea) {
+        textarea.addEventListener('input', handleEditorInput);
+        textarea.addEventListener('keydown', handleEditorKeydown);
+        textarea.addEventListener('scroll', syncLineNumbersScroll);
+        textarea.addEventListener('click', handleEditorClick);
+        textarea.addEventListener('keyup', handleEditorClick);
+    }
+
+    // Run button
+    document.getElementById('runCode')?.addEventListener('click', handleRunCode);
+
+    // Explain button
+    document.getElementById('lineExplain')?.addEventListener('click', toggleExplainMode);
+
+    // Copy / Download
+    document.getElementById('copyCode')?.addEventListener('click', handleCopyCode);
+    document.getElementById('downloadCode')?.addEventListener('click', handleDownloadCode);
+
+    // Theme toggle
+    document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
+
+    // Console input
+    document.getElementById('consoleInput')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendConsoleInput();
+    });
+
+    // Terminal actions
+    document.getElementById('clearTerminal')?.addEventListener('click', clearTerminal);
+    document.getElementById('closePanel')?.addEventListener('click', toggleBottomPanel);
+
+    // AI Chat
+    document.getElementById('sendButton')?.addEventListener('click', sendMessage);
+    document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                target.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
+            sendMessage();
+        }
+    });
 
-                // Update active nav link
-                document.querySelectorAll('.nav-link').forEach(link => {
-                    link.classList.remove('active');
-                });
-                this.classList.add('active');
+    // Right panel close buttons
+    document.getElementById('closeAIPanel')?.addEventListener('click', () => toggleRightPanel('ai'));
+    document.getElementById('closeExplainPanel')?.addEventListener('click', () => toggleRightPanel('explain'));
+
+    // Onboarding starter buttons
+    document.getElementById('btnStartBlank')?.addEventListener('click', () => {
+        if (State.tabs.size === 0) {
+            TabManager.createTab();
+        }
+        setEditorCode('// Start coding here...\n');
+        document.getElementById('emptyStateView').style.display = 'none';
+        if (window.editor) window.editor.focus();
+    });
+
+    document.getElementById('btnOpenFolderEmpty')?.addEventListener('click', () => {
+        FileExplorer.openFolder();
+    });
+
+    // Quick action suggestions
+    document.querySelectorAll('.suggestion-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            handleQuickAction(chip.dataset.action);
+        });
+    });
+
+    // Activity bar
+    document.getElementById('actExplorer')?.addEventListener('click', () => {
+        toggleSidebar();
+    });
+
+    document.getElementById('actExplain')?.addEventListener('click', () => {
+        toggleRightPanel('explain');
+        if (State.rightPanelVisible && State.rightPanelView === 'explain') {
+            if (State.explanationMode !== 'line') {
+                toggleExplainMode();
+            }
+        }
+    });
+
+    document.getElementById('actAI')?.addEventListener('click', () => toggleRightPanel('ai'));
+
+    document.getElementById('actSettings')?.addEventListener('click', () => {
+        showToast('Settings', 'Settings panel coming soon!');
+    });
+
+    // File explorer buttons
+    document.getElementById('btnOpenFolder')?.addEventListener('click', () => FileExplorer.openFolder());
+    document.getElementById('btnNewFile')?.addEventListener('click', () => {
+        const name = prompt('File name:', 'new_file.cpp');
+        if (name) FileExplorer.createFile(name);
+    });
+    document.getElementById('btnNewFolder')?.addEventListener('click', () => {
+        const name = prompt('Folder name:', 'new_folder');
+        if (name) FileExplorer.createFolder(name);
+    });
+    document.getElementById('btnRefreshTree')?.addEventListener('click', () => {
+        if (State.folderHandle) FileExplorer.readDirectory(State.folderHandle);
+    });
+
+}
+
+// ============================================================================
+// 15. MONACO EDITOR & STARTER SNIPPETS
+// ============================================================================
+
+const StarterSnippets = [
+    {
+        id: 'hello_world',
+        title: 'Hello World',
+        icon: 'terminal',
+        desc: 'Print text to the console. The absolute first step in C++.',
+        code: `// C++ Basic Input/Output (Hello World)
+#include <iostream>
+using namespace std;
+int main() {
+    // Print message to console
+    cout << "Hello, World!" <<endl;
+    return 0;
+}`
+    },
+    {
+        id: 'arithmetic',
+        title: 'Arithmetic Operations',
+        icon: 'plus',
+        desc: 'Addition, subtraction, multiplication, and division.',
+        code: `// C++ Arithmetic Operations
+#include <iostream>
+
+int main() {
+    int a = 15;
+    int b = 4;
+    
+    std::cout << "Numbers: a = " << a << ", b = " << b << std::endl;
+    std::cout << "Addition (a + b): " << (a + b) << std::endl;
+    std::cout << "Subtraction (a - b): " << (a - b) << std::endl;
+    std::cout << "Multiplication (a * b): " << (a * b) << std::endl;
+    std::cout << "Division (a / b): " << (a / b) << " (integer)" << std::endl;
+    std::cout << "Modulo (a % b): " << (a % b) << " (remainder)" << std::endl;
+    
+    return 0;
+}`
+    },
+    {
+        id: 'even_odd',
+        title: 'Even or Odd Check',
+        icon: 'help-circle',
+        desc: 'Check if a number is even or odd using if-else and modulo.',
+        code: `// C++ If-Else (Even/Odd Check)
+#include <iostream>
+
+int main() {
+    int number;
+    std::cout << "Enter an integer to check: ";
+    std::cin >> number;
+    
+    // Check if number is divisible by 2
+    if (number % 2 == 0) {
+        std::cout << number << " is EVEN." << std::endl;
+    } else {
+        std::cout << number << " is ODD." << std::endl;
+    }
+    
+    return 0;
+}`
+    },
+    {
+        id: 'loops_for',
+        title: 'For Loop (Count 1-10)',
+        icon: 'repeat',
+        desc: 'Repeat code a specific number of times using a for loop.',
+        code: `// C++ For Loop (Counting)
+#include <iostream>
+
+int main() {
+    std::cout << "Counting from 1 to 10:" << std::endl;
+    
+    // Loop runs from 1 to 10
+    for (int i = 1; i <= 10; i++) {
+        std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    
+    return 0;
+}`
+    },
+    {
+        id: 'loops_while',
+        title: 'While Loop (Factorial)',
+        icon: 'refresh-cw',
+        desc: 'Calculate the factorial of a number using a while loop.',
+        code: `// C++ While Loop (Factorial)
+#include <iostream>
+
+int main() {
+    int n = 5;
+    long long factorial = 1;
+    int i = 1;
+    
+    while (i <= n) {
+        factorial *= i;
+        i++;
+    }
+    
+    std::cout << "Factorial of " << n << " is " << factorial << std::endl;
+    return 0;
+}`
+    },
+    {
+        id: 'calculator',
+        title: 'Simple Calculator',
+        icon: 'calculator',
+        desc: 'Perform basic math using switch statements and user input.',
+        code: `// C++ Simple Calculator
+#include <iostream>
+
+int main() {
+    char op;
+    double num1, num2;
+    
+    std::cout << "Enter operator (+, -, *, /): ";
+    std::cin >> op;
+    std::cout << "Enter two numbers: ";
+    std::cin >> num1 >> num2;
+    
+    switch(op) {
+        case '+':
+            std::cout << num1 << " + " << num2 << " = " << (num1 + num2) << std::endl;
+            break;
+        case '-':
+            std::cout << num1 << " - " << num2 << " = " << (num1 - num2) << std::endl;
+            break;
+        case '*':
+            std::cout << num1 << " * " << num2 << " = " << (num1 * num2) << std::endl;
+            break;
+        case '/':
+            if (num2 != 0)
+                std::cout << num1 << " / " << num2 << " = " << (num1 / num2) << std::endl;
+            else
+                std::cout << "Error: Division by zero!" << std::endl;
+            break;
+        default:
+            std::cout << "Error: Invalid operator!" << std::endl;
+    }
+    
+    return 0;
+}`
+    },
+    {
+        id: 'arrays',
+        title: 'Arrays & Max Value',
+        icon: 'list',
+        desc: 'Store a list of numbers and find the maximum value.',
+        code: `// C++ Arrays (Find Maximum)
+#include <iostream>
+
+int main() {
+    int numbers[5] = {12, 45, 8, 23, 31};
+    int max = numbers[0];
+    
+    std::cout << "Array elements: ";
+    for (int i = 0; i < 5; i++) {
+        std::cout << numbers[i] << " ";
+        if (numbers[i] > max) {
+            max = numbers[i];
+        }
+    }
+    
+    std::cout << "\\nMaximum value in the array: " << max << std::endl;
+    return 0;
+}`
+    },
+    {
+        id: 'strings',
+        title: 'Strings & User Name',
+        icon: 'type',
+        desc: 'Get string input and manipulate text in C++.',
+        code: `// C++ Strings
+#include <iostream>
+#include <string>
+using namespace std;
+int main() {
+    string name;
+    
+    cout << "What is your name? ";
+    getline(cin, name);
+    
+    cout << "Hello, " << name << "! Welcome to Sensei IDE." << endl;
+    cout << "Your name is " << name.length() << " characters long." << endl;
+    
+    return 0;
+}`
+    },
+    {
+        id: 'fibonacci',
+        title: 'Fibonacci Series',
+        icon: 'trending-up',
+        desc: 'Generate Fibonacci numbers using a loop.',
+        code: `// C++ Fibonacci Series
+#include <iostream>
+
+int main() {
+    int terms = 10;
+    int t1 = 0, t2 = 1, nextTerm = 0;
+    
+    std::cout << "Fibonacci Series (10 terms): " << std::endl;
+    for (int i = 1; i <= terms; ++i) {
+        std::cout << t1 << " ";
+        nextTerm = t1 + t2;
+        t1 = t2;
+        t2 = nextTerm;
+    }
+    std::cout << std::endl;
+    
+    return 0;
+}`
+    },
+    {
+        id: 'star_pattern',
+        title: 'Star Pattern (Triangle)',
+        icon: 'triangle',
+        desc: 'Print a right-angled triangle pattern of stars using nested loops.',
+        code: `// C++ Star Pattern (Triangle)
+#include <iostream>
+
+int main() {
+    int rows = 5;
+    
+    for(int i = 1; i <= rows; ++i) {
+        for(int j = 1; j <= i; ++j) {
+            std::cout << "* ";
+        }
+        std::cout << std::endl;
+    }
+    
+    return 0;
+}`
+    }
+];
+
+function getEditorCode() {
+    if (window.editor) {
+        return window.editor.getValue();
+    }
+    return document.getElementById('codeTextarea')?.value || '';
+}
+
+function setEditorCode(value) {
+    if (window.editor) {
+        window.editor.setValue(value);
+    } else {
+        const el = document.getElementById('codeTextarea');
+        if (el) el.value = value;
+    }
+    handleEditorInput();
+}
+
+function checkEditorEmptyState() {
+    const emptyStateView = document.getElementById('emptyStateView');
+    if (!emptyStateView) return;
+
+    const hasTabs = State.tabs.size > 0;
+    const currentCode = getEditorCode();
+
+    if (!hasTabs) {
+        emptyStateView.style.display = 'flex';
+        document.getElementById('templateGrid').style.display = 'none';
+        document.getElementById('emptyStateSubtitle').innerText = 'Get started by creating a new file or opening a folder.';
+        document.getElementById('btnStartBlank').style.display = 'none';
+        return;
+    }
+
+    const isCleanEmpty = currentCode.trim() === '' ||
+        currentCode.trim() === '// Welcome to Sensei!' ||
+        currentCode.trim().startsWith('// Start coding here') ||
+        currentCode.trim().startsWith('// C++ Basic Input/Output') ||
+        currentCode.trim().startsWith('// C++ Arithmetic') ||
+        currentCode.trim().startsWith('// C++ If-Else') ||
+        currentCode.trim().startsWith('// C++ For Loop') ||
+        currentCode.trim().startsWith('// C++ While Loop') ||
+        currentCode.trim().startsWith('// C++ Simple Calculator') ||
+        currentCode.trim().startsWith('// C++ Arrays') ||
+        currentCode.trim().startsWith('// C++ Strings') ||
+        currentCode.trim().startsWith('// C++ Fibonacci') ||
+        currentCode.trim().startsWith('// C++ Star Pattern') ||
+        (currentCode.includes('int main()') && currentCode.length < 300 && currentCode.includes('Enter a number:'));
+
+    if (isCleanEmpty) {
+        emptyStateView.style.display = 'flex';
+        document.getElementById('templateGrid').style.display = 'grid';
+        document.getElementById('emptyStateSubtitle').innerText = 'Select a beginner C++ template below to load example code instantly.';
+        document.getElementById('btnStartBlank').style.display = 'block';
+    } else {
+        emptyStateView.style.display = 'none';
+    }
+}
+
+function renderStarterTemplates() {
+    const grid = document.getElementById('templateGrid');
+    if (!grid) return;
+
+    grid.innerHTML = StarterSnippets.map(snippet => {
+        return `
+            <div class="template-card" data-snippet-id="${snippet.id}">
+                <div class="template-card-title">
+                    <i data-lucide="${snippet.icon}"></i>
+                    ${snippet.title}
+                </div>
+                <div class="template-card-desc">${snippet.desc}</div>
+            </div>
+        `;
+    }).join('');
+
+    grid.querySelectorAll('.template-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const snippetId = card.getAttribute('data-snippet-id');
+            const snippet = StarterSnippets.find(s => s.id === snippetId);
+            if (snippet) {
+                if (State.tabs.size === 0) {
+                    TabManager.createTab();
+                }
+                setEditorCode(snippet.code);
+                document.getElementById('emptyStateView').style.display = 'none';
+                if (window.editor) window.editor.focus();
             }
         });
     });
 
-    // Update active nav on scroll
-    window.addEventListener('scroll', () => {
-        const sections = document.querySelectorAll('section[id]');
-        const scrollPosition = window.scrollY + 100;
+    initLucide();
+}
 
-        sections.forEach(section => {
-            const sectionTop = section.offsetTop;
-            const sectionHeight = section.offsetHeight;
-            const sectionId = section.getAttribute('id');
+function initMonaco() {
+    return new Promise((resolve) => {
+        if (typeof require === 'undefined') {
+            resolve();
+            return;
+        }
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            registerCppAutocomplete();
 
-            if (scrollPosition >= sectionTop && scrollPosition < sectionTop + sectionHeight) {
-                document.querySelectorAll('.nav-link').forEach(link => {
-                    link.classList.remove('active');
-                    if (link.getAttribute('href') === `#${sectionId}`) {
-                        link.classList.add('active');
-                    }
-                });
+            const container = document.getElementById('editorContent');
+            if (!container) {
+                resolve();
+                return;
             }
+
+            const textarea = document.getElementById('codeTextarea');
+            const initialCode = textarea ? textarea.value : '';
+            if (textarea) textarea.remove();
+
+            const editorDiv = document.createElement('div');
+            editorDiv.id = 'monacoEditor';
+            editorDiv.className = 'code-textarea';
+            editorDiv.style.width = '100%';
+            editorDiv.style.height = '100%';
+            container.appendChild(editorDiv);
+
+            monaco.editor.defineTheme('sensei-theme', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: 'comment', foreground: '71717a', fontStyle: 'italic' },
+                    { token: 'keyword', foreground: '6366f1', fontStyle: 'bold' },
+                    { token: 'string', foreground: 'a78bfa' },
+                    { token: 'number', foreground: '10b981' },
+                    { token: 'type', foreground: '3b82f6' },
+                    { token: 'preprocessor', foreground: 'f59e0b' }
+                ],
+                colors: {
+                    'editor.background': '#121215',
+                    'editor.foreground': '#d4d4d8',
+                    'editorLineNumber.foreground': '#4b5563',
+                    'editorLineNumber.activeForeground': '#6366f1',
+                    'editor.lineHighlightBackground': '#1a1a22',
+                    'editor.selectionBackground': 'rgba(99, 102, 241, 0.15)',
+                    'editorCursor.foreground': '#ffffff'
+                }
+            });
+
+            window.editor = monaco.editor.create(editorDiv, {
+                value: initialCode,
+                language: 'cpp',
+                theme: 'sensei-theme',
+                automaticLayout: true,
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 13,
+                lineHeight: 20,
+                tabSize: 4,
+                minimap: { enabled: false },
+                scrollbar: {
+                    vertical: 'visible',
+                    horizontal: 'visible',
+                    verticalScrollbarSize: 8,
+                    horizontalScrollbarSize: 8
+                }
+            });
+
+            window.editor.onDidChangeModelContent(() => {
+                handleEditorInput();
+            });
+
+            window.editor.onDidChangeCursorPosition(() => {
+                updateStatusBar();
+                if (State.explanationMode === 'line') {
+                    handleCursorMove();
+                }
+            });
+
+            resolve();
         });
     });
 }
 
-// Initialize collapsed chatbox state
-document.addEventListener('DOMContentLoaded', function () {
-    const chatbox = document.getElementById('aiChatbox');
-    chatbox.classList.add('collapsed');
-});
+function registerCppAutocomplete() {
+    if (typeof monaco === 'undefined') return;
+
+    monaco.languages.registerCompletionItemProvider('cpp', {
+        provideCompletionItems: function (model, position) {
+            const suggestions = [];
+
+            const keywords = [
+                'int', 'float', 'double', 'char', 'string', 'bool', 'void',
+                'if', 'else', 'switch', 'case', 'default', 'for', 'while', 'do',
+                'return', 'class', 'struct', 'public', 'private', 'protected',
+                'using', 'namespace', 'std', 'new', 'delete', 'const', 'static',
+                'template', 'typename', 'virtual', 'override', 'include'
+            ];
+
+            keywords.forEach(kw => {
+                suggestions.push({
+                    label: kw,
+                    kind: monaco.languages.CompletionItemKind.Keyword,
+                    insertText: kw,
+                    range: undefined
+                });
+            });
+
+            const stdItems = [
+                { label: 'cout', insertText: 'cout << ${1:value} << endl;', detail: 'std::cout output stream', isSnippet: true },
+                { label: 'cin', insertText: 'cin >> ${1:variable};', detail: 'std::cin input stream', isSnippet: true },
+                { label: 'endl', insertText: 'endl', detail: 'std::endl newline', isSnippet: false },
+                { label: 'vector', insertText: 'vector<${1:type}> ${2:name};', detail: 'std::vector dynamic array', isSnippet: true },
+                { label: 'map', insertText: 'map<${1:key_type}, ${2:value_type}> ${3:name};', detail: 'std::map associative array', isSnippet: true },
+                { label: 'set', insertText: 'set<${1:type}> ${2:name};', detail: 'std::set unique ordered elements', isSnippet: true },
+                { label: 'string', insertText: 'string', detail: 'std::string class', isSnippet: false },
+                { label: 'iostream', insertText: 'iostream', detail: 'Input/Output stream header', isSnippet: false },
+                { label: 'vector_header', insertText: 'vector', detail: 'Vector header', isSnippet: false },
+                { label: 'algorithm', insertText: 'algorithm', detail: 'Algorithm header', isSnippet: false }
+            ];
+
+            stdItems.forEach(item => {
+                suggestions.push({
+                    label: item.label,
+                    kind: item.isSnippet ? monaco.languages.CompletionItemKind.Snippet : monaco.languages.CompletionItemKind.Value,
+                    insertText: item.insertText,
+                    insertTextRules: item.isSnippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+                    detail: item.detail,
+                    range: undefined
+                });
+            });
+
+            const lineContent = model.getLineContent(position.lineNumber);
+            const includeMatch = lineContent.match(/#include\s*<\s*([\w]*)$/);
+            if (includeMatch) {
+                const headers = ['iostream', 'vector', 'string', 'algorithm', 'map', 'set', 'cmath', 'iomanip', 'fstream'];
+                return {
+                    suggestions: headers.map(h => ({
+                        label: h,
+                        kind: monaco.languages.CompletionItemKind.Module,
+                        insertText: h + '>',
+                        detail: 'Standard C++ Header',
+                        range: undefined
+                    }))
+                };
+            }
+
+            const stdMatch = lineContent.match(/std::([\w]*)$/);
+            if (stdMatch) {
+                const stdMembers = [
+                    { label: 'cout', insertText: 'cout', detail: 'Standard output stream' },
+                    { label: 'cin', insertText: 'cin', detail: 'Standard input stream' },
+                    { label: 'endl', insertText: 'endl', detail: 'Standard end line' },
+                    { label: 'vector', insertText: 'vector', detail: 'Dynamic array' },
+                    { label: 'string', insertText: 'string', detail: 'String object' },
+                    { label: 'map', insertText: 'map', detail: 'Map container' },
+                    { label: 'set', insertText: 'set', detail: 'Set container' }
+                ];
+                return {
+                    suggestions: stdMembers.map(m => ({
+                        label: m.label,
+                        kind: monaco.languages.CompletionItemKind.Method,
+                        insertText: m.insertText,
+                        detail: m.detail,
+                        range: undefined
+                    }))
+                };
+            }
+
+            return { suggestions: suggestions };
+        }
+    });
+}

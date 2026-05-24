@@ -4,103 +4,221 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cpp Sensei - Interactive C++ Learning Platform</title>
+    <title>Sensei — C++ IDE</title>
     <meta name="description"
-        content="Learn C++ programming with AI-powered explanations, interactive code editor, and beginner-friendly tutorials.">
+        content="AI-powered C++ IDE for learning and development. Write, compile, run, and understand C++ code.">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
 
     <!-- Styles -->
     <link rel="stylesheet" href="public/styles.css">
 </head>
 
-<body class="light-mode">
-    <!-- Navbar -->
-    <nav class="navbar">
-        <div class="navbar-container">
-            <!-- Logo -->
-            <div class="navbar-logo">
-                <div class="logo-icon">🥋</div>
-                <span class="logo-text">Cpp Sensei</span>
+<body class="dark-mode">
+
+    <!-- IDE Container — CSS Grid Layout -->
+    <div class="ide-container right-panel-hidden" id="ideContainer">
+
+        <!-- ====== Title Bar ====== -->
+        <header class="titlebar" id="titlebar">
+            <div class="titlebar-logo">
+                <span class="logo-emoji">🥋</span>
+                <span class="logo-text">Sensei</span>
             </div>
 
-            <!-- Navigation Menu -->
-            <div class="navbar-menu">
-                <a href="#home" class="nav-link active">Home</a>
-                <a href="#learn" class="nav-link">Learn</a>
-                <a href="#features" class="nav-link">Features</a>
-                <a href="#pricing" class="nav-link">Pricing</a>
-                <a href="#about" class="nav-link">About</a>
+            <nav class="titlebar-menu">
+                <button class="titlebar-menu-item" id="menuFile">File</button>
+                <button class="titlebar-menu-item" id="menuView">View</button>
+                <button class="titlebar-menu-item" id="menuRun">Run</button>
+                <button class="titlebar-menu-item" id="menuHelp">Help</button>
+            </nav>
+
+            <div class="titlebar-center">
+                <span class="titlebar-filename" id="titleFilename">
+                    <span class="unsaved-dot" id="titleUnsavedDot" style="display:none;">● </span>
+                    <span id="titleFileText">Untitled-1.cpp</span>
+                </span>
             </div>
 
-            <!-- Right Side -->
-            <div class="navbar-right">
-                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <i data-lucide="sun" class="theme-icon light-icon"></i>
-                    <i data-lucide="moon" class="theme-icon dark-icon"></i>
+            <div class="titlebar-actions">
+                <button class="titlebar-btn" id="themeToggle" title="Toggle Theme">
+                    <i data-lucide="sun"></i>
                 </button>
-
             </div>
+        </header>
+
+        <!-- File Menu Dropdown -->
+        <div class="menu-dropdown" id="fileMenuDropdown">
+            <button class="menu-dropdown-item" id="menuNewFile">
+                New File <span class="shortcut">Ctrl+N</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuOpenFile">
+                Open File... <span class="shortcut">Ctrl+O</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuOpenFolder">
+                Open Folder...
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuSave">
+                Save <span class="shortcut">Ctrl+S</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuSaveAs">
+                Save As... <span class="shortcut">Ctrl+Shift+S</span>
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuDownload">
+                Download
+            </button>
         </div>
-    </nav>
 
-    <!-- Home Section -->
-    <section id="home" class="section-home">
-        <main class="workspace">
-            <!-- Left Panel - Code Editor -->
-            <div class="code-editor-panel">
-                <div class="code-editor">
-                    <!-- Editor Header -->
-                    <div class="editor-header">
-                        <div class="editor-header-left">
-                            <!-- Language Label -->
-                            <div class="language-label">
-                                <span class="language-icon">⚡</span>
-                                <span class="language-name">C++</span>
-                            </div>
+        <!-- View Menu Dropdown -->
+        <div class="menu-dropdown" id="viewMenuDropdown">
+            <button class="menu-dropdown-item" id="menuToggleSidebar">
+                Toggle Sidebar <span class="shortcut">Ctrl+B</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuToggleTerminal">
+                Toggle Terminal <span class="shortcut">Ctrl+`</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuToggleAI">
+                Toggle AI Panel <span class="shortcut">Ctrl+Shift+A</span>
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuToggleTheme">
+                Toggle Theme
+            </button>
+        </div>
 
-                            <!-- Action Buttons -->
-                            <div class="editor-actions">
-                                <button class="btn btn-primary btn-sm" id="runCode">
-                                    <i data-lucide="play"></i>
-                                    Run
-                                </button>
-                                <button class="btn btn-secondary btn-sm" id="lineExplain">
-                                    <i data-lucide="lightbulb"></i>
-                                    Line-by-Line
-                                </button>
-                                <button class="btn btn-accent btn-sm" id="fullExplain">
-                                    <i data-lucide="book-open"></i>
-                                    Full Explain
-                                </button>
-                            </div>
-                        </div>
+        <!-- Run Menu Dropdown -->
+        <div class="menu-dropdown" id="runMenuDropdown">
+            <button class="menu-dropdown-item" id="menuRunCode">
+                Run Code <span class="shortcut">Ctrl+Enter</span>
+            </button>
+        </div>
 
-                        <!-- Utility Buttons -->
-                        <div class="editor-header-right">
-                            <button class="btn btn-ghost btn-sm" id="copyCode" aria-label="Copy code">
-                                <i data-lucide="copy"></i>
-                            </button>
-                            <button class="btn btn-ghost btn-sm" id="downloadCode" aria-label="Download code">
-                                <i data-lucide="download"></i>
-                            </button>
-                        </div>
+        <!-- Help Menu Dropdown -->
+        <div class="menu-dropdown" id="helpMenuDropdown">
+            <button class="menu-dropdown-item" onclick="window.open('learn.html','_blank')">
+                Learn C++
+            </button>
+            <button class="menu-dropdown-item" onclick="window.open('features.html','_blank')">
+                Features
+            </button>
+            <button class="menu-dropdown-item" onclick="window.open('about.html','_blank')">
+                About Sensei
+            </button>
+        </div>
+
+
+        <!-- ====== Activity Bar ====== -->
+        <aside class="activity-bar" id="activityBar">
+            <div class="activity-bar-top">
+                <button class="activity-btn active" id="actExplorer" title="Explorer (Ctrl+Shift+E)">
+                    <i data-lucide="files"></i>
+                </button>
+                <button class="activity-btn" id="actExplain" title="Code Explanation">
+                    <i data-lucide="lightbulb"></i>
+                </button>
+                <button class="activity-btn" id="actAI" title="AI Assistant (Ctrl+Shift+A)">
+                    <i data-lucide="bot"></i>
+                </button>
+            </div>
+            <div class="activity-bar-bottom">
+                <button class="activity-btn" id="actSettings" title="Settings">
+                    <i data-lucide="settings"></i>
+                </button>
+            </div>
+        </aside>
+
+
+        <!-- ====== Sidebar ====== -->
+        <aside class="sidebar" id="sidebar">
+            <!-- File Explorer View -->
+            <div class="file-explorer" id="fileExplorerView">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">Explorer</span>
+                    <div class="sidebar-actions">
+                        <button class="sidebar-action-btn" id="btnNewFile" title="New File">
+                            <i data-lucide="file-plus"></i>
+                        </button>
+                        <button class="sidebar-action-btn" id="btnNewFolder" title="New Folder">
+                            <i data-lucide="folder-plus"></i>
+                        </button>
+                        <button class="sidebar-action-btn" id="btnRefreshTree" title="Refresh">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
                     </div>
+                </div>
+                <div class="file-tree" id="fileTree">
+                    <!-- Empty state -->
+                    <div class="sidebar-empty" id="sidebarEmpty">
+                        <p>No folder opened yet.</p>
+                        <button class="sidebar-empty-btn" id="btnOpenFolder">Open Folder</button>
+                        <p style="margin-top: 4px; font-size: 11px;">Or drag a folder here</p>
+                    </div>
+                </div>
+            </div>
 
-                    <!-- Code Editor Area -->
-                    <div class="editor-content">
-                        <div class="line-numbers" id="lineNumbers"></div>
-                        <textarea id="codeTextarea" class="code-textarea" spellcheck="false"
-                            placeholder="Start coding...">// Welcome to Cpp Sensei! 
-// Let's start with a simple C++ example
+            <!-- Left sidebar is now exclusive to File Explorer -->
+
+            <!-- Resize Handle -->
+            <div class="sidebar-resize" id="sidebarResize"></div>
+        </aside>
+
+
+        <!-- ====== Main Content Area ====== -->
+        <main class="main-area" id="mainArea">
+
+            <!-- Tab Bar -->
+            <div class="tab-bar" id="tabBar">
+                <div class="tab active" data-tab-id="untitled-1" id="tabDefault">
+                    <span class="tab-icon cpp"><i data-lucide="file-code"></i></span>
+                    <span class="tab-title">Untitled-1.cpp</span>
+                    <span class="tab-dirty"></span>
+                    <button class="tab-close" title="Close">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="editor-area" id="editorArea">
+                <!-- Editor Toolbar -->
+                <div class="editor-toolbar" id="editorToolbar">
+                    <div class="editor-toolbar-left">
+                        <button class="toolbar-btn run-btn" id="runCode" title="Run (Ctrl+Enter)">
+                            <i data-lucide="play"></i>
+                            <span>Run</span>
+                        </button>
+                        <div class="toolbar-separator"></div>
+                        <button class="toolbar-btn" id="lineExplain" title="Toggle line explanations">
+                            <i data-lucide="lightbulb"></i>
+                            <span>Explain</span>
+                        </button>
+                    </div>
+                    <div class="editor-toolbar-right">
+                        <button class="toolbar-btn" id="copyCode" title="Copy code">
+                            <i data-lucide="copy"></i>
+                        </button>
+                        <button class="toolbar-btn" id="downloadCode" title="Download code">
+                            <i data-lucide="download"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Content -->
+                <div class="editor-content" id="editorContent">
+                    <div class="line-numbers" id="lineNumbers"></div>
+                    <textarea id="codeTextarea" class="code-textarea" spellcheck="false" placeholder="Start coding...">// Welcome to Sensei!
+// Your AI-powered C++ learning IDE
 
 #include <iostream>
 using namespace std;
@@ -111,336 +229,181 @@ int main() {
     cin >> num;
     cout << "You entered: " << num << endl;
     return 0;
-}
-</textarea>
-                    </div>
+}</textarea>
 
-                    <!-- Console Output -->
-                    <div class="console-panel" id="consolePanel"
-                        style="display: none; border-top: 1px solid #333; background: #1e1e1e; padding: 10px; font-family: 'Fira Code', monospace; color: #fff; display: flex; flex-direction: column; height: 200px;">
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; flex-shrink: 0;">
-                            <span style="font-size: 0.8rem; text-transform: uppercase; color: #888;">Console
-                                Output</span>
-                            <button id="closeConsole"
-                                style="background: none; border: none; color: #888; cursor: pointer;">&times;</button>
-                        </div>
-                        <div id="consoleOutput"
-                            style="white-space: pre-wrap; font-size: 0.9rem; flex-grow: 1; overflow-y: auto;"></div>
-                        <div style="display: flex; border-top: 1px solid #333; padding-top: 5px; margin-top: 5px;">
-                            <span style="color: #0f0; margin-right: 5px;">&gt;</span>
-                            <input type="text" id="consoleInput" placeholder="Type input here..."
-                                style="background: transparent; border: none; color: white; font-family: inherit; flex-grow: 1; outline: none;">
+                    <!-- Empty State Onboarding View -->
+                    <div class="empty-state-view" id="emptyStateView" style="display: none;">
+                        <div class="empty-state-container">
+                            <div class="empty-state-logo">🥋</div>
+                            <h1 class="empty-state-title">Welcome to Sensei</h1>
+                            <p class="empty-state-subtitle" id="emptyStateSubtitle">Select a beginner C++ template below to load example code instantly.</p>
+                            
+                            <div class="template-grid" id="templateGrid"></div>
+                            
+                            <div class="empty-state-actions">
+                                <button class="empty-action-btn" id="btnStartBlank">Start from scratch</button>
+                                <button class="empty-action-btn secondary" id="btnOpenFolderEmpty">Open Folder</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Panel - Explanation Panel -->
-            <div class="explanation-panel">
-                <div class="explanation-container">
-                    <!-- Panel Header -->
-                    <div class="explanation-header">
-                        <div class="explanation-header-left">
-                            <h2 class="explanation-title" id="explanationTitle">AI Explanations</h2>
-                            <span class="explanation-badge" id="explanationBadge" style="display: none;"></span>
-                        </div>
-
-                        <button class="btn btn-sm" id="toggleBeginnerMode">
-                            <i data-lucide="graduation-cap" class="beginner-icon"></i>
-                            <i data-lucide="brain" class="advanced-icon" style="display: none;"></i>
-                            <span class="mode-text">Beginner Mode</span>
+            <!-- Bottom Panel (Terminal) -->
+            <div class="panel-bottom collapsed" id="panelBottom" style="height: 200px;">
+                <div class="panel-bottom-resize" id="panelBottomResize"></div>
+                <div class="panel-header">
+                    <div class="panel-header-tabs">
+                        <button class="panel-tab active" id="tabTerminal">
+                            <i data-lucide="terminal"></i>
+                            Terminal
+                        </button>
+                        <button class="panel-tab" id="tabOutput">
+                            Output
                         </button>
                     </div>
-
-                    <!-- Content -->
-                    <div class="explanation-content" id="explanationContent">
-                        <!-- Idle State -->
-                        <div class="explanation-idle" id="explanationIdle">
-                            <div class="idle-icon">
-                                <i data-lucide="code"></i>
-                            </div>
-                            <div class="idle-content">
-                                <h3>Ready to Learn!</h3>
-                                <p>Click "Line-by-Line" or "Full Explain" to get AI-powered explanations of your code.
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Line Explanations -->
-                        <div class="line-explanations" id="lineExplanations" style="display: none;"></div>
-
-                        <!-- Full Explanations -->
-                        <div class="full-explanations" id="fullExplanations" style="display: none;"></div>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="clearTerminal" title="Clear Terminal">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                        <button class="panel-action-btn" id="closePanel" title="Close Panel">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="terminal-content" id="terminalContent">
+                    <div class="terminal-output" id="consoleOutput">
+                        <span class="compile-msg">Sensei Terminal Ready.</span>
+                    </div>
+                    <div class="terminal-input-line">
+                        <span class="prompt-char">❯</span>
+                        <input type="text" id="consoleInput" class="terminal-input"
+                            placeholder="Type input here when program is running...">
                     </div>
                 </div>
             </div>
+
         </main>
-    </section>
 
-    <!-- Learn Section -->
-    <section id="learn" class="section-learn">
-        <div class="container">
-            <div class="section-header">
-                <h1>Learn with Cpp Sensei</h1>
-                <p>Interactive tutorials designed for absolute beginners</p>
-            </div>
 
-            <div class="tutorial-grid">
-                <div class="tutorial-card">
-                    <div class="tutorial-icon">📚</div>
-                    <h3>Learn C++ from Scratch</h3>
-                    <p>Start your coding journey with zero prior knowledge required</p>
-                    <button class="btn btn-primary">Start Learning</button>
-                </div>
-                <div class="tutorial-card">
-                    <div class="tutorial-icon">🔍</div>
-                    <h3>Line by Line Explanations</h3>
-                    <p>Understand every single line of code in simple English</p>
-                    <button class="btn btn-primary">Start Learning</button>
-                </div>
-                <div class="tutorial-card">
-                    <div class="tutorial-icon">💬</div>
-                    <h3>Input & Output with cin/cout</h3>
-                    <p>Master how to get input and display output in C++</p>
-                    <button class="btn btn-primary">Start Learning</button>
-                </div>
-                <div class="tutorial-card">
-                    <div class="tutorial-icon">🔄</div>
-                    <h3>Variables & Loops</h3>
-                    <p>Learn how to store data and repeat actions efficiently</p>
-                    <button class="btn btn-primary">Start Learning</button>
-                </div>
-            </div>
+        <!-- ====== Right Panel (AI Assistant) ====== -->
+        <aside class="panel-right" id="panelRight">
+            <div class="panel-right-resize" id="panelRightResize"></div>
 
-            <div class="learning-flow">
-                <h2>How It Works</h2>
-                <div class="flow-steps">
-                    <div class="flow-step">
-                        <div class="step-number">1</div>
-                        <div class="step-icon">⌨️</div>
-                        <h3>Type Your Code</h3>
-                        <p>Write or paste your C++ code in the editor</p>
-                    </div>
-                    <div class="flow-arrow">→</div>
-                    <div class="flow-step">
-                        <div class="step-number">2</div>
-                        <div class="step-icon">🔍</div>
-                        <h3>Click "Explain"</h3>
-                        <p>Let the AI analyze your code</p>
-                    </div>
-                    <div class="flow-arrow">→</div>
-                    <div class="flow-step">
-                        <div class="step-number">3</div>
-                        <div class="step-icon">📖</div>
-                        <h3>Read Explanations</h3>
-                        <p>Get beginner-friendly breakdowns</p>
-                    </div>
-                    <div class="flow-arrow">→</div>
-                    <div class="flow-step">
-                        <div class="step-number">4</div>
-                        <div class="step-icon">💬</div>
-                        <h3>Chat with Sensei</h3>
-                        <p>Ask questions anytime</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features" class="section-features">
-        <div class="container">
-            <div class="section-header">
-                <h1>Features that Make Learning Fun</h1>
-                <p>Everything you need to master C++ coding</p>
-            </div>
-
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3>AI Line-by-Line Explanation</h3>
-                    <p>Understand every single line of your code in simple English, perfect for beginners</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">💬</div>
-                    <h3>Smart Chat Assistant</h3>
-                    <p>Ask your doubts to Cpp Sensei anytime and get instant, helpful answers</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🎨</div>
-                    <h3>Playful Design</h3>
-                    <p>Learn C++ in a fun, colorful environment that makes coding enjoyable</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📖</div>
-                    <h3>Full Code Summary</h3>
-                    <p>See what your whole program does at once with comprehensive overviews</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>No Setup Needed</h3>
-                    <p>Just type and learn instantly in your browser - no downloads required</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3>Beginner Focused</h3>
-                    <p>Every explanation assumes zero prior knowledge - we start from the basics</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Pricing Section -->
-    <section id="pricing" class="section-pricing">
-        <div class="container">
-            <div class="section-header">
-                <h1>Plans & Access</h1>
-                <p>Simple, honest pricing for learners</p>
-            </div>
-
-            <div class="pricing-card">
-                <div class="sensei-mascot">🥋</div>
-                <h2>Free Forever</h2>
-                <p class="pricing-description">
-                    Cpp Sensei is completely free to use! We're building more features to make your learning journey
-                    even better.
-                </p>
-                <div class="pricing-features">
-                    <div class="pricing-feature">✓ Unlimited code explanations</div>
-                    <div class="pricing-feature">✓ AI chat assistant</div>
-                    <div class="pricing-feature">✓ All tutorials included</div>
-                    <div class="pricing-feature">✓ No credit card required</div>
-                </div>
-                <button class="btn btn-accent btn-large" onclick="window.location.href='#home'">Start Coding
-                    Free</button>
-                <p class="pricing-note">More features coming soon! 🚀</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- About Section -->
-    <section id="about" class="section-about">
-        <div class="container">
-            <div class="section-header">
-                <h1>About Cpp Sensei</h1>
-                <p>Your friendly AI-powered C++ mentor</p>
-            </div>
-
-            <div class="mission-statement">
-                <h2>Our Mission</h2>
-                <p>
-                    Cpp Sensei was built to make learning C++ simple, visual, and fun.
-                    Every line you write tells a story — and we help you understand it.
-                </p>
-            </div>
-
-            <div class="why-section">
-                <h2>Why We Built This</h2>
-                <p>
-                    We noticed that many students struggle to understand code because traditional tutorials
-                    just show the code without explaining <em>why</em> each line exists and what it does.
-                    That's why we created Cpp Sensei - a platform that explains every single line in plain,
-                    beginner-friendly language. No jargon, no assumptions, just clear explanations.
-                </p>
-            </div>
-
-            <div class="tech-stack">
-                <h2>Built With</h2>
-                <div class="tech-icons">
-                    <div class="tech-item">
-                        <div class="tech-icon">HTML5</div>
-                        <span>HTML</span>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-icon">CSS3</div>
-                        <span>CSS</span>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-icon">JS</div>
-                        <span>JavaScript</span>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-icon">🤖</div>
-                        <span>AI Powered</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="contact-section">
-                <h2>Get in Touch</h2>
-                <p>Have ideas or feedback? We'd love to hear from you!</p>
-                <div class="contact-options">
-                    <a href="mailto:aldeydeketone@gmail.com" class="btn btn-primary">
-                        <i data-lucide="mail"></i>
-                        Email Us
-                    </a>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- AI Chatbox -->
-    <div class="ai-chatbox" id="aiChatbox">
-        <div class="chatbox-header" id="chatboxHeader">
-            <div class="chatbox-header-left">
-                <div class="ai-avatar">
-                    <i data-lucide="bot"></i>
-                </div>
-                <div class="chatbox-info">
-                    <span class="chatbox-title">AI Assistant</span>
-                    <span class="chatbox-status">Ready to help</span>
-                </div>
-            </div>
-            <button class="chatbox-toggle" id="chatboxToggle">
-                <i data-lucide="chevron-up" class="expand-icon"></i>
-                <i data-lucide="chevron-down" class="collapse-icon" style="display: none;"></i>
-            </button>
-        </div>
-
-        <div class="chatbox-content" id="chatboxContent">
-            <div class="chat-messages" id="chatMessages">
-                <div class="chat-message ai-message">
-                    <div class="message-avatar">
+            <!-- AI Assistant View -->
+            <div class="panel-right-view" id="aiAssistantView" style="display: flex; height: 100%; flex-direction: column;">
+                <div class="panel-right-header">
+                    <div class="panel-right-title">
                         <i data-lucide="bot"></i>
+                        AI Assistant
                     </div>
-                    <div class="message-content">
-                        <p>Hi! I'm C++ Sensei. Ask me anything about your code! 🚀</p>
-                        <div class="starter-buttons"
-                            style="margin-top: 10px; display: flex; gap: 5px; flex-wrap: wrap;">
-                            <button class="btn btn-xs btn-outline" onclick="loadStarterCode('io')">Basic I/O</button>
-                            <button class="btn btn-xs btn-outline" onclick="loadStarterCode('array')">Arrays</button>
-                            <button class="btn btn-xs btn-outline" onclick="loadStarterCode('string')">Strings</button>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="closeAIPanel" title="Close">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-message ai-message">
+                        <div class="message-avatar">
+                            <i data-lucide="bot"></i>
+                        </div>
+                        <div class="message-content">
+                            <p>Hi! I'm <strong>Sensei</strong>, your C++ coding assistant. Ask me anything about your code! 🥋</p>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="quick-actions">
-                <button class="quick-action-btn" data-action="step-by-step">
-                    <i data-lucide="list"></i>
-                    Explain step by step
-                </button>
-                <button class="quick-action-btn" data-action="optimize">
-                    <i data-lucide="zap"></i>
-                    Optimize my code
-                </button>
-                <button class="quick-action-btn" data-action="find-errors">
-                    <i data-lucide="alert-circle"></i>
-                    Find errors
-                </button>
-            </div>
+                <div class="chat-suggestions">
+                    <button class="suggestion-chip" data-action="step-by-step">Explain step by step</button>
+                    <button class="suggestion-chip" data-action="optimize">Optimize code</button>
+                    <button class="suggestion-chip" data-action="find-errors">Find errors</button>
+                    <button class="suggestion-chip" data-action="starter-io">Basic I/O</button>
+                    <button class="suggestion-chip" data-action="starter-array">Arrays</button>
+                    <button class="suggestion-chip" data-action="starter-string">Strings</button>
+                </div>
 
-            <div class="chat-input-container">
-                <div class="chat-input-wrapper">
-                    <input type="text" class="chat-input" id="chatInput" placeholder="Ask anything about your code..."
-                        maxlength="500">
-                    <button class="send-button" id="sendButton">
-                        <i data-lucide="send"></i>
-                    </button>
+                <div class="chat-input-area">
+                    <div class="chat-input-wrapper">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Ask about your code..." maxlength="1000">
+                        <button class="send-button" id="sendButton" title="Send (Enter)">
+                            <i data-lucide="send"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Explain View -->
+            <div class="panel-right-view" id="explainView" style="display: none; height: 100%; flex-direction: column;">
+                <div class="panel-right-header">
+                    <div class="panel-right-title">
+                        <i data-lucide="lightbulb"></i>
+                        Code Explanation
+                    </div>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="closeExplainPanel" title="Close">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="explain-content" id="explanationContent">
+                    <div class="explain-idle" id="explainIdle">
+                        <i data-lucide="code-2"></i>
+                        <p>Click on a line in the editor to see its explanation.</p>
+                        <p style="font-size: 11px; color: var(--text-muted);">The explanation engine uses regex-based static analysis.</p>
+                    </div>
+                    <div id="lineExplanations" style="display: none;"></div>
+                </div>
+            </div>
+        </aside>
+
+
+        <!-- ====== Status Bar ====== -->
+        <footer class="statusbar" id="statusbar">
+            <div class="statusbar-left">
+                <div class="status-item clickable" id="statusBranch" title="Source Control">
+                    <i data-lucide="git-branch" class="status-icon"></i>
+                    <span>main</span>
+                </div>
+                <div class="status-item" id="statusConnection">
+                    <i data-lucide="circle" class="status-icon" style="color: #4ec9b0;"></i>
+                    <span>Connected</span>
+                </div>
+            </div>
+            <div class="statusbar-right">
+                <div class="status-item clickable" id="statusCursor">
+                    <span>Ln 1, Col 1</span>
+                </div>
+                <div class="status-item">
+                    <span>UTF-8</span>
+                </div>
+                <div class="status-item clickable" id="statusLanguage">
+                    <span>C++</span>
+                </div>
+                <div class="status-item" id="statusSensei" title="Sensei v1.0">
+                    <span>🥋 Sensei</span>
+                </div>
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Context Menu (file tree right-click) -->
+    <div class="context-menu" id="contextMenu">
+        <button class="context-menu-item" data-action="rename">
+            <i data-lucide="pencil"></i> Rename
+        </button>
+        <button class="context-menu-item" data-action="delete">
+            <i data-lucide="trash-2"></i> Delete
+        </button>
+        <div class="context-menu-separator"></div>
+        <button class="context-menu-item" data-action="new-file">
+            <i data-lucide="file-plus"></i> New File
+        </button>
+        <button class="context-menu-item" data-action="new-folder">
+            <i data-lucide="folder-plus"></i> New Folder
+        </button>
     </div>
 
     <!-- Toast Container -->

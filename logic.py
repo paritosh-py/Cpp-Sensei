@@ -202,8 +202,13 @@ class SenseiLogic:
              "https://en.cppreference.com/w/cpp/language/return"),
 
             # ==============================================================================
-            # GROUP 7: OOP PILLARS
+            # GROUP 7: OOP PILLARS, CONSTRUCTORS & TEMPLATES
             # ==============================================================================
+            (r'template\s*<\s*(typename|class)\s+(\w+)\s*>',
+             "TEMPLATE DECLARATION: Making a generic structure with placeholder type '{1}'.",
+             "CONCEPT: Templates enable generic programming in C++. It allows a class or function to operate with different data types without rewriting code for each one. The compiler generates concrete classes/functions behind the scenes.",
+             "https://en.cppreference.com/w/cpp/language/templates"),
+
             (r'class\s+(\w+)',
              "CLASS: Blueprint for a complex object '{}'.",
              "CONCEPT: A Class bundles data (attributes) and logic (methods) together. It is the foundation of Object-Oriented Programming.",
@@ -233,6 +238,39 @@ class SenseiLogic:
              "VIRTUAL FUNCTION: Enabling Polymorphism.",
              "CONCEPT: POLYMORPHISM. 'Virtual' tells the compiler: 'Don't bind this function call yet. Wait until the program runs to see what kind of object this really is.' This allows a parent pointer to call the child's version of a function.",
              "https://en.cppreference.com/w/cpp/language/virtual"),
+
+            # Constructors (Copy, Default, Parameterized)
+            (r'^\s*(\w+)\s*\(\s*\1\s*&\s*(\w+)\s*\)\s*\{?$',
+             "COPY CONSTRUCTOR: Defining copy constructor for class '{0}' copying from '{1}'.",
+             "CONCEPT: A copy constructor initializes a new object using an existing object of the same class. It performs a member-wise copy of all fields.",
+             "https://en.cppreference.com/w/cpp/language/copy_constructor"),
+
+            (r'^\s*(\w+)\s*\(\s*\)\s*\{?$',
+             "DEFAULT CONSTRUCTOR: Initializer for class '{}' with no parameters.",
+             "CONCEPT: The default constructor is called automatically when an object is instantiated without any arguments. It is used to set initial default values for class fields.",
+             "https://en.cppreference.com/w/cpp/language/default_constructor"),
+
+            (r'^\s*(?!\s*(?:if|for|while|switch|return|void|int|float|double|char|bool|string)\b)(\w+)\s*\(([^&)]+)\)\s*\{?$',
+             "PARAMETERIZED CONSTRUCTOR: Initializer for class '{0}' taking inputs: ({1}).",
+             "CONCEPT: A parameterized constructor allows passing arguments during object creation to initialize fields to specific values.",
+             "https://en.cppreference.com/w/cpp/language/initializer_list"),
+
+            # Object creations
+            (r'\b(?!int|float|double|char|bool|string|void|return|const|class|struct|public|private|protected|template)(\w+)\s+(\w+)\s*\(([^)]+)\)\s*;',
+             "OBJECT CREATION: Creating object '{1}' of type '{0}' with parameters ({2}).",
+             "CONCEPT: Instantiates an object of custom class '{0}' on the Stack by calling its parameterized (or copy) constructor with arguments '{2}'.",
+             "https://en.cppreference.com/w/cpp/language/constructor"),
+
+            (r'\b(?!int|float|double|char|bool|string|void|return|const|class|struct|public|private|protected|template)(\w+)\s+(\w+)\s*(?:;|=)?\s*$',
+             "OBJECT CREATION: Creating object '{1}' of type '{0}' with default constructor.",
+             "CONCEPT: Instantiates an object of custom class '{0}' on the Stack. Because no arguments are specified, the default constructor is invoked.",
+             "https://en.cppreference.com/w/cpp/language/default_constructor"),
+
+            # Method Calls
+            (r'\b(\w+)\s*(\.|->)\s*(\w+)\s*\((.*)\)\s*;',
+             "METHOD CALL: Calling '{2}' on object '{0}' with arguments ({3}).",
+             "CONCEPT: Invoking a member function (method) of an object. The '.' operator is used for direct objects, and '->' is used when accessing members via a pointer to an object.",
+             "https://en.cppreference.com/w/cpp/language/member_functions"),
         ]
 
     def explain_line(self, line: str) -> str:
@@ -262,6 +300,38 @@ class SenseiLogic:
 
         # Fallback for unsupported lines
         return "Line analysis unsupported. (AI Explanation Available)"
+
+    def explain_line_structured(self, line: str) -> dict:
+        """
+        Structured line explanation returning summary, detail, and reference URL.
+        """
+        line = line.strip()
+        if not line or line in ["{", "}", "};", "public:", "private:", "protected:"]:
+            return {
+                "summary": "...",
+                "detail": "",
+                "url": None
+            }
+        
+        for pattern, summary, detail, url in self.rules:
+            match = re.search(pattern, line)
+            if match:
+                try:
+                    s = summary.format(*match.groups())
+                    d = detail.format(*match.groups())
+                except IndexError:
+                    s = summary
+                    d = detail
+                return {
+                    "summary": s,
+                    "detail": d,
+                    "url": url
+                }
+        return {
+            "summary": "Line analysis unsupported",
+            "detail": "Use the AI Assistant on the right for in-depth questions.",
+            "url": None
+        }
 
     def explain_more(self, line: str) -> Optional[Tuple[str, str]]:
         """
