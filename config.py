@@ -28,8 +28,8 @@ load_env()
 
 # Centralized Configurations
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-# Use gemini-1.5-flash by default: optimized for coding, fast, token-efficient, and free-tier friendly
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash").strip()
+# Use gemini-2.5-flash by default: optimized for coding, fast, token-efficient, and free-tier friendly
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
 # AI Parameter limits and behaviors
 AI_TEMPERATURE = float(os.environ.get("AI_TEMPERATURE", "0.4"))
