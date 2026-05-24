@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensei — C++ IDE</title>
+    <meta name="description"
+        content="AI-powered C++ IDE for learning and development. Write, compile, run, and understand C++ code.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="public/styles.css">
+</head>
+
+<body class="dark-mode">
+
+    <!-- IDE Container — CSS Grid Layout -->
+    <div class="ide-container right-panel-hidden" id="ideContainer">
+
+        <!-- ====== Title Bar ====== -->
+        <header class="titlebar" id="titlebar">
+            <div class="titlebar-logo">
+                <span class="logo-emoji">🥋</span>
+                <span class="logo-text">Sensei</span>
+            </div>
+
+            <nav class="titlebar-menu">
+                <button class="titlebar-menu-item" id="menuFile">File</button>
+                <button class="titlebar-menu-item" id="menuView">View</button>
+                <button class="titlebar-menu-item" id="menuRun">Run</button>
+                <button class="titlebar-menu-item" id="menuHelp">Help</button>
+            </nav>
+
+            <div class="titlebar-center">
+                <span class="titlebar-filename" id="titleFilename">
+                    <span class="unsaved-dot" id="titleUnsavedDot" style="display:none;">● </span>
+                    <span id="titleFileText">Untitled-1.cpp</span>
+                </span>
+            </div>
+
+            <div class="titlebar-actions">
+                <button class="titlebar-btn" id="themeToggle" title="Toggle Theme">
+                    <i data-lucide="sun"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- File Menu Dropdown -->
+        <div class="menu-dropdown" id="fileMenuDropdown">
+            <button class="menu-dropdown-item" id="menuNewFile">
+                New File <span class="shortcut">Ctrl+N</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuOpenFile">
+                Open File... <span class="shortcut">Ctrl+O</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuOpenFolder">
+                Open Folder...
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuSave">
+                Save <span class="shortcut">Ctrl+S</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuSaveAs">
+                Save As... <span class="shortcut">Ctrl+Shift+S</span>
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuDownload">
+                Download
+            </button>
+        </div>
+
+        <!-- View Menu Dropdown -->
+        <div class="menu-dropdown" id="viewMenuDropdown">
+            <button class="menu-dropdown-item" id="menuToggleSidebar">
+                Toggle Sidebar <span class="shortcut">Ctrl+B</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuToggleTerminal">
+                Toggle Terminal <span class="shortcut">Ctrl+`</span>
+            </button>
+            <button class="menu-dropdown-item" id="menuToggleAI">
+                Toggle AI Panel <span class="shortcut">Ctrl+Shift+A</span>
+            </button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="menuToggleTheme">
+                Toggle Theme
+            </button>
+        </div>
+
+        <!-- Run Menu Dropdown -->
+        <div class="menu-dropdown" id="runMenuDropdown">
+            <button class="menu-dropdown-item" id="menuRunCode">
+                Run Code <span class="shortcut">Ctrl+Enter</span>
+            </button>
+        </div>
+
+        <!-- Help Menu Dropdown -->
+        <div class="menu-dropdown" id="helpMenuDropdown">
+            <button class="menu-dropdown-item" onclick="window.open('learn.html','_blank')">
+                Learn C++
+            </button>
+            <button class="menu-dropdown-item" onclick="window.open('features.html','_blank')">
+                Features
+            </button>
+            <button class="menu-dropdown-item" onclick="window.open('about.html','_blank')">
+                About Sensei
+            </button>
+        </div>
+
+
+        <!-- ====== Activity Bar ====== -->
+        <aside class="activity-bar" id="activityBar">
+            <div class="activity-bar-top">
+                <button class="activity-btn active" id="actExplorer" title="Explorer (Ctrl+Shift+E)">
+                    <i data-lucide="files"></i>
+                </button>
+                <button class="activity-btn" id="actExplain" title="Code Explanation">
+                    <i data-lucide="lightbulb"></i>
+                </button>
+                <button class="activity-btn" id="actAI" title="AI Assistant (Ctrl+Shift+A)">
+                    <i data-lucide="bot"></i>
+                </button>
+            </div>
+            <div class="activity-bar-bottom">
+                <button class="activity-btn" id="actSettings" title="Settings">
+                    <i data-lucide="settings"></i>
+                </button>
+            </div>
+        </aside>
+
+
+        <!-- ====== Sidebar ====== -->
+        <aside class="sidebar" id="sidebar">
+            <!-- File Explorer View -->
+            <div class="file-explorer" id="fileExplorerView">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">Explorer</span>
+                    <div class="sidebar-actions">
+                        <button class="sidebar-action-btn" id="btnNewFile" title="New File">
+                            <i data-lucide="file-plus"></i>
+                        </button>
+                        <button class="sidebar-action-btn" id="btnNewFolder" title="New Folder">
+                            <i data-lucide="folder-plus"></i>
+                        </button>
+                        <button class="sidebar-action-btn" id="btnRefreshTree" title="Refresh">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="file-tree" id="fileTree">
+                    <!-- Empty state -->
+                    <div class="sidebar-empty" id="sidebarEmpty">
+                        <p>No folder opened yet.</p>
+                        <button class="sidebar-empty-btn" id="btnOpenFolder">Open Folder</button>
+                        <p style="margin-top: 4px; font-size: 11px;">Or drag a folder here</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Left sidebar is now exclusive to File Explorer -->
+
+            <!-- Resize Handle -->
+            <div class="sidebar-resize" id="sidebarResize"></div>
+        </aside>
+
+
+        <!-- ====== Main Content Area ====== -->
+        <main class="main-area" id="mainArea">
+
+            <!-- Tab Bar -->
+            <div class="tab-bar" id="tabBar">
+                <div class="tab active" data-tab-id="untitled-1" id="tabDefault">
+                    <span class="tab-icon cpp"><i data-lucide="file-code"></i></span>
+                    <span class="tab-title">Untitled-1.cpp</span>
+                    <span class="tab-dirty"></span>
+                    <button class="tab-close" title="Close">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="editor-area" id="editorArea">
+                <!-- Editor Toolbar -->
+                <div class="editor-toolbar" id="editorToolbar">
+                    <div class="editor-toolbar-left">
+                        <button class="toolbar-btn run-btn" id="runCode" title="Run (Ctrl+Enter)">
+                            <i data-lucide="play"></i>
+                            <span>Run</span>
+                        </button>
+                        <div class="toolbar-separator"></div>
+                        <button class="toolbar-btn" id="lineExplain" title="Toggle line explanations">
+                            <i data-lucide="lightbulb"></i>
+                            <span>Explain</span>
+                        </button>
+                    </div>
+                    <div class="editor-toolbar-right">
+                        <button class="toolbar-btn" id="copyCode" title="Copy code">
+                            <i data-lucide="copy"></i>
+                        </button>
+                        <button class="toolbar-btn" id="downloadCode" title="Download code">
+                            <i data-lucide="download"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Content -->
+                <div class="editor-content" id="editorContent">
+                    <div class="line-numbers" id="lineNumbers"></div>
+                    <textarea id="codeTextarea" class="code-textarea" spellcheck="false" placeholder="Start coding...">// Welcome to Sensei!
+// Your AI-powered C++ learning IDE
+
+#include <iostream>
+using namespace std;
+
+int main() {
+    int num;
+    cout << "Enter a number: ";
+    cin >> num;
+    cout << "You entered: " << num << endl;
+    return 0;
+}</textarea>
+
+                    <!-- Empty State Onboarding View -->
+                    <div class="empty-state-view" id="emptyStateView" style="display: none;">
+                        <div class="empty-state-container">
+                            <div class="empty-state-logo">🥋</div>
+                            <h1 class="empty-state-title">Welcome to Sensei</h1>
+                            <p class="empty-state-subtitle" id="emptyStateSubtitle">Select a beginner C++ template below to load example code instantly.</p>
+                            
+                            <div class="template-grid" id="templateGrid"></div>
+                            
+                            <div class="empty-state-actions">
+                                <button class="empty-action-btn" id="btnStartBlank">Start from scratch</button>
+                                <button class="empty-action-btn secondary" id="btnOpenFolderEmpty">Open Folder</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Panel (Terminal) -->
+            <div class="panel-bottom collapsed" id="panelBottom" style="height: 200px;">
+                <div class="panel-bottom-resize" id="panelBottomResize"></div>
+                <div class="panel-header">
+                    <div class="panel-header-tabs">
+                        <button class="panel-tab active" id="tabTerminal">
+                            <i data-lucide="terminal"></i>
+                            Terminal
+                        </button>
+                        <button class="panel-tab" id="tabOutput">
+                            Output
+                        </button>
+                    </div>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="clearTerminal" title="Clear Terminal">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                        <button class="panel-action-btn" id="closePanel" title="Close Panel">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="terminal-content" id="terminalContent">
+                    <div class="terminal-output" id="consoleOutput">
+                        <span class="compile-msg">Sensei Terminal Ready.</span>
+                    </div>
+                    <div class="terminal-input-line">
+                        <span class="prompt-char">❯</span>
+                        <input type="text" id="consoleInput" class="terminal-input"
+                            placeholder="Type input here when program is running...">
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+
+        <!-- ====== Right Panel (AI Assistant) ====== -->
+        <aside class="panel-right" id="panelRight">
+            <div class="panel-right-resize" id="panelRightResize"></div>
+
+            <!-- AI Assistant View -->
+            <div class="panel-right-view" id="aiAssistantView" style="display: flex; height: 100%; flex-direction: column;">
+                <div class="panel-right-header">
+                    <div class="panel-right-title">
+                        <i data-lucide="bot"></i>
+                        AI Assistant
+                    </div>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="closeAIPanel" title="Close">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-message ai-message">
+                        <div class="message-avatar">
+                            <i data-lucide="bot"></i>
+                        </div>
+                        <div class="message-content">
+                            <p>Hi! I'm <strong>Sensei</strong>, your C++ coding assistant. Ask me anything about your code! 🥋</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-suggestions">
+                    <button class="suggestion-chip" data-action="step-by-step">Explain step by step</button>
+                    <button class="suggestion-chip" data-action="optimize">Optimize code</button>
+                    <button class="suggestion-chip" data-action="find-errors">Find errors</button>
+                    <button class="suggestion-chip" data-action="starter-io">Basic I/O</button>
+                    <button class="suggestion-chip" data-action="starter-array">Arrays</button>
+                    <button class="suggestion-chip" data-action="starter-string">Strings</button>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="chat-input-wrapper">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Ask about your code..." maxlength="1000">
+                        <button class="send-button" id="sendButton" title="Send (Enter)">
+                            <i data-lucide="send"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Explain View -->
+            <div class="panel-right-view" id="explainView" style="display: none; height: 100%; flex-direction: column;">
+                <div class="panel-right-header">
+                    <div class="panel-right-title">
+                        <i data-lucide="lightbulb"></i>
+                        Code Explanation
+                    </div>
+                    <div class="panel-header-actions">
+                        <button class="panel-action-btn" id="closeExplainPanel" title="Close">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="explain-content" id="explanationContent">
+                    <div class="explain-idle" id="explainIdle">
+                        <i data-lucide="code-2"></i>
+                        <p>Click on a line in the editor to see its explanation.</p>
+                        <p style="font-size: 11px; color: var(--text-muted);">The explanation engine uses regex-based static analysis.</p>
+                    </div>
+                    <div id="lineExplanations" style="display: none;"></div>
+                </div>
+            </div>
+        </aside>
+
+
+        <!-- ====== Status Bar ====== -->
+        <footer class="statusbar" id="statusbar">
+            <div class="statusbar-left">
+                <div class="status-item clickable" id="statusBranch" title="Source Control">
+                    <i data-lucide="git-branch" class="status-icon"></i>
+                    <span>main</span>
+                </div>
+                <div class="status-item" id="statusConnection">
+                    <i data-lucide="circle" class="status-icon" style="color: #4ec9b0;"></i>
+                    <span>Connected</span>
+                </div>
+            </div>
+            <div class="statusbar-right">
+                <div class="status-item clickable" id="statusCursor">
+                    <span>Ln 1, Col 1</span>
+                </div>
+                <div class="status-item">
+                    <span>UTF-8</span>
+                </div>
+                <div class="status-item clickable" id="statusLanguage">
+                    <span>C++</span>
+                </div>
+                <div class="status-item" id="statusSensei" title="Sensei v1.0">
+                    <span>🥋 Sensei</span>
+                </div>
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Context Menu (file tree right-click) -->
+    <div class="context-menu" id="contextMenu">
+        <button class="context-menu-item" data-action="rename">
+            <i data-lucide="pencil"></i> Rename
+        </button>
+        <button class="context-menu-item" data-action="delete">
+            <i data-lucide="trash-2"></i> Delete
+        </button>
+        <div class="context-menu-separator"></div>
+        <button class="context-menu-item" data-action="new-file">
+            <i data-lucide="file-plus"></i> New File
+        </button>
+        <button class="context-menu-item" data-action="new-folder">
+            <i data-lucide="folder-plus"></i> New Folder
+        </button>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- JavaScript -->
+    <script src="public/script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - Cpp Sensei</title>
+    <meta name="description" content="About Cpp Sensei - Your friendly AI-powered C++ mentor">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="public/styles.css">
+    <link rel="stylesheet" href="public/legacy.css">
+</head>
+
+<body class="dark-mode page-legacy">
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-mascot">🥋</div>
+            <h2 class="loading-title">Cpp Sensei</h2>
+            <p class="loading-text">Loading about page...</p>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-logo">
+                <div class="logo-icon">🥋</div>
+                <span class="logo-text">Cpp Sensei</span>
+            </div>
+
+            <div class="navbar-menu">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="learn.html" class="nav-link">Learn</a>
+                <a href="features.html" class="nav-link">Features</a>
+                <a href="about.html" class="nav-link active">About</a>
+            </div>
+
+            <div class="navbar-right">
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <i data-lucide="sun" class="theme-icon light-icon"></i>
+                    <i data-lucide="moon" class="theme-icon dark-icon"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- About Section -->
+    <section class="section-about-page">
+        <div class="container">
+            <div class="section-header">
+                <h1>About Cpp Sensei</h1>
+                <p>Your friendly AI-powered C++ mentor</p>
+            </div>
+
+            <div class="mission-statement">
+                <h2>Our Mission</h2>
+                <p>
+                    Cpp Sensei was built to make learning C++ simple, visual, and fun.
+                    Every line you write tells a story — and we help you understand it.
+                </p>
+            </div>
+
+            <div class="why-section">
+                <h2>Why We Built This</h2>
+                <p>
+                    We noticed that many students struggle to understand code because traditional tutorials
+                    just show the code without explaining <em>why</em> each line exists and what it does.
+                    That's why we created Cpp Sensei - a platform that explains every single line in plain,
+                    beginner-friendly language. No jargon, no assumptions, just clear explanations.
+                </p>
+            </div>
+
+            <div class="tech-stack">
+                <h2>Built With</h2>
+                <div class="tech-icons">
+                    <div class="tech-item">
+                        <div class="tech-icon">HTML5</div>
+                        <span>HTML</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-icon">CSS3</div>
+                        <span>CSS</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-icon">JS</div>
+                        <span>JavaScript</span>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-icon">🤖</div>
+                        <span>AI Powered</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="contact-section">
+                <h2>Get in Touch</h2>
+                <p>Have ideas or feedback? We'd love to hear from you!</p>
+                <div class="contact-options">
+                    <a href="mailto:aldeydeketone@gmail.com" class="btn btn-primary">
+                        <i data-lucide="mail"></i>
+                        Email Us
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="public/script.js"></script>
+</body>
+
+</html>

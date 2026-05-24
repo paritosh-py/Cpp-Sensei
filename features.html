@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Features - Cpp Sensei</title>
+    <meta name="description" content="Discover the features of Cpp Sensei">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Fira+Code:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="public/styles.css">
+    <link rel="stylesheet" href="public/legacy.css">
+</head>
+
+<body class="dark-mode page-legacy">
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-mascot">🥋</div>
+            <h2 class="loading-title">Cpp Sensei</h2>
+            <p class="loading-text">Loading features...</p>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-logo">
+                <div class="logo-icon">🥋</div>
+                <span class="logo-text">Cpp Sensei</span>
+            </div>
+
+            <div class="navbar-menu">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="learn.html" class="nav-link">Learn</a>
+                <a href="features.html" class="nav-link active">Features</a>
+                <a href="about.html" class="nav-link">About</a>
+            </div>
+
+            <div class="navbar-right">
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <i data-lucide="sun" class="theme-icon light-icon"></i>
+                    <i data-lucide="moon" class="theme-icon dark-icon"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Features Section -->
+    <section class="section-features-page">
+        <div class="container">
+            <div class="section-header">
+                <h1>Features that Make Learning Fun</h1>
+                <p>Everything you need to master C++ coding</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>AI Line-by-Line Explanation</h3>
+                    <p>Understand every single line of your code in simple English, perfect for beginners</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3>Smart Chat Assistant</h3>
+                    <p>Ask your doubts to Cpp Sensei anytime and get instant, helpful answers</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3>Playful Design</h3>
+                    <p>Learn C++ in a fun, colorful environment that makes coding enjoyable</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📖</div>
+                    <h3>Full Code Summary</h3>
+                    <p>See what your whole program does at once with comprehensive overviews</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>No Setup Needed</h3>
+                    <p>Just type and learn instantly in your browser - no downloads required</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Beginner Focused</h3>
+                    <p>Every explanation assumes zero prior knowledge - we start from the basics</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="public/script.js"></script>
+</body>
+
+</html>

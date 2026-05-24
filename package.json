@@ -1,0 +1,38 @@
+{
+  "name": "cpp-sensei",
+  "version": "1.0.0",
+  "description": "Interactive C++ Learning IDE",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.cppsensei.app",
+    "productName": "Cpp Sensei",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/banner.png"
+    },
+    "files": [
+      "main.js",
+      "dist/server.exe",
+      "index.html",
+      "public/**",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/server.exe",
+        "to": "server.exe"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

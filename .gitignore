@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.exe
+*.o
+*.obj
+temp_*.cpp
+temp_*.exe
+venv/
+.env
+.vscode/
+
+node_modules/
+dist/
+build/
+release/
+*.spec

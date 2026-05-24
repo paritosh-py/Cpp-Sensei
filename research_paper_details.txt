@@ -1,0 +1,49 @@
+Cpp-Sensei: An AI-Powered Interactive Learning IDE for C++
+
+Abstract
+Cpp-Sensei is a modern, interactive Integrated Development Environment (IDE) specifically tailored for learning C++ programming. Unlike standard text editors, Cpp-Sensei actively monitors user keystrokes to provide real-time, context-aware breakdowns of the code via static analysis and Generative AI. Designed as a desktop web application leveraging Electron, this project bridges the gap between theoretical learning and practical software engineering for beginners.
+
+1. Introduction
+Learning C++ can be daunting due to its complex syntax, manual memory management, and abstract object-oriented principles. Standard IDEs lack beginner-focused debugging and often present cryptic compilation errors. Cpp-Sensei addresses this by delivering real-time guidance, intuitive explanations, and a conversational AI tutor directly integrated into the coding workspace.
+
+2. Core Features
+- Instant AI Explanations: Users can receive line-by-line analyses or full-code summaries. The platform translates complex C++ paradigms into simple, plain-English concepts.
+- Smart Chat Assistant: A built-in coding assistant, powered by the Google Gemini AI, helps users with doubts, debugging, and code optimization. It is strictly scoped to answer programming questions and refuse non-coding topics.
+- Real-Time Execution & I/O: Users can compile and run code instantly. The console supports live stdout and stdin streaming, allowing interactive programs (like those demanding user input via `cin`) to function seamlessly.
+- Beginner Mode: A toggleable mode that simplifies explanations, abstracting away intense technical jargon when the user is just starting out.
+- Responsive Modern UI: Features a dark/light mode, aesthetic design, syntax highlighting layout, and an accessible interface built with HTML5 and Vanilla JS.
+
+3. Architecture & Tech Stack (Electron WebApp Context)
+The project assumes a decoupled architecture that is elegantly wrapped into a desktop application using Electron:
+- Frontend (Presentation Layer): Built with Vanilla JavaScript, HTML5, and CSS3. The UI uses Lucide icons and customized fonts (Nunito, Fira Code). In an Electron context, this layer is rendered within a native OS window, giving the platform a lightweight, reactive desktop feel.
+- Backend (API & Execution Server): Powered by FastAPI (Python), utilizing asynchronous routing and Uvicorn. This server handles HTTP REST requests for code explanations and WebSockets for real-time code execution.
+- AI Logic Engine (`ai_logic.py`): Integrates the `google-generativeai` SDK. It dynamically selects the best available Gemini model (e.g., gemini-1.5-flash or gemini-1.5-pro) to generate chat responses and starter code templates.
+- Static Analysis Engine (`logic.py`): A custom-built, regex-powered brain that categorizes and explains C++ syntax (e.g., arrays, pointers, OOP classes, STL vectors) in real-time without relying heavily on API calls, ensuring low latency.
+- Compiler Layer: The local `g++` (GCC/MinGW) compiler is invoked under the hood via Python's `subprocess` module to compile and execute code directly on the host machine.
+
+4. System Workflow: From Start to End
+Phase 1: Code Editing & Real-Time Analysis
+When a user writes code in the editor, the frontend captures the text. If the user clicks "Line-by-Line" or selects code, an HTTP POST request is sent to the `/explain` endpoint. The FastAPI server routes this to the `SenseiLogic` engine, which applies Regular Expressions to match the syntax against over 30 predefined rules (e.g., detecting `#include`, `virtual` functions, or `new` keyword allocations) and returns a detailed concept breakdown.
+
+Phase 2: AI Tutoring
+If the user opens the Chatbox and asks a question, an HTTP POST request is sent to `/chat`. The backend securely queries the Gemini API using an enforced system prompt that guarantees the AI acts as a helpful, beginner-friendly tutor focused solely on C++. The response is piped back to the user interface.
+
+Phase 3: Code Compilation & Interactive Execution
+When the user clicks "Run Code":
+1. The frontend initiates a WebSocket connection to the `/ws/run` endpoint.
+2. The user's complete source code is sent over the socket.
+3. The server generates a Unique ID (UUID) and creates a temporary source file (`temp_UUID.cpp`).
+4. The server invokes `g++` via `subprocess.run` to compile the file. If there is a compilation error (e.g., a missing semicolon), the raw `stderr` is passed back to the frontend.
+5. If compilation succeeds, an executable (`temp_UUID.exe` on Windows) is created. 
+6. The server runs the executable asynchronously using `subprocess.Popen`. It attaches threads to the standard output and standard error streams, reading them character-by-character and forwarding them continuously to the WebSocket.
+7. If the C++ program requires input (`cin`), the frontend console captures the user's keystrokes and transmits them over the WebSocket into the `stdin` of the running process.
+8. Upon program termination, the server cleanly sends a `[Program Finished]` signal, closes the socket, and safely deletes the temporary source and executable files.
+
+5. Security and Deployment Considerations
+Because this platform executes code via local Python shell commands, it inherently possesses security implications:
+- Local Execution (Electron): As a desktop Electron application running locally, executing code directly on the host machine is intended and safe for personal use, provided the user only runs their own code. 
+- Sandboxing: If this architecture were to be shifted to a public-facing cloud web server, the `subprocess` execution model would require rigid sandboxing (e.g., Docker containers or nsjail) to prevent malicious scripts (like arbitrary file deletion) from compromising the server.
+- Secret Management: The Gemini API Key must be securely injected via environment variables (`os.environ`) in production environments rather than hardcoded in the repository.
+
+6. Conclusion
+Cpp-Sensei effectively gamifies and simplifies the C++ learning curve. By marrying high-performance local compilation (via FastApi and GCC) with the instant feedback loop of Generative AI and Regex semantic analysis, the platform provides a robust, self-guided educational environment. Building this as an Electron app pushes it from a conceptual web tool to a fluid native desktop IDE.
