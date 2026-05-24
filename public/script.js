@@ -721,7 +721,7 @@ async function handleCursorMove() {
         </div>`;
 
         try {
-            const response = await fetch('http://localhost:8000/explain', {
+            const response = await fetch('/explain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ line: lineContent })
@@ -789,7 +789,7 @@ async function sendMessage() {
     try {
         // Attach current editor code as context
         const codeContext = getEditorCode();
-        const response = await fetch('http://localhost:8000/chat', {
+        const response = await fetch('/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message, code_context: codeContext })
@@ -845,7 +845,7 @@ function renderMarkdown(text) {
     let html = escapeHtml(text);
 
     // Code blocks (```lang\n...```) — render with header bar
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    html = html.replace(/```(\w*)\s*\r?\n([\s\S]*?)```/g, (match, lang, code) => {
         const langLabel = lang || 'code';
         const trimmedCode = code.trim();
         const escapedCode = trimmedCode;
@@ -894,7 +894,7 @@ function renderMarkdown(text) {
     html = html.split('\n\n').map(p => {
         p = p.trim();
         if (!p) return '';
-        if (p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<li') || p.startsWith('<h') || p.startsWith('<div class="code-block')) return p;
+        if (p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<li') || p.startsWith('<h') || p.includes('code-block-wrapper')) return p;
         return `<p>${p.replace(/\n/g, '<br>')}</p>`;
     }).join('');
 
@@ -904,13 +904,48 @@ function renderMarkdown(text) {
 function copyCodeBlock(btn) {
     const wrapper = btn.closest('.code-block-wrapper') || btn.closest('pre');
     const code = wrapper.querySelector('code');
-    navigator.clipboard.writeText(code.textContent).then(() => {
+    const text = code.textContent;
+
+    const performCopy = () => {
         const original = btn.innerHTML;
         btn.innerHTML = '<i data-lucide="check"></i> Copied!';
         btn.classList.add('copied');
         initLucide();
         setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); initLucide(); }, 1500);
-    });
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(performCopy).catch(err => {
+            fallbackCopyText(text, performCopy);
+        });
+    } else {
+        fallbackCopyText(text, performCopy);
+    }
+}
+
+function fallbackCopyText(text, callback) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+        document.execCommand('copy');
+        callback();
+    } catch (err) {
+        console.error('Fallback copy failed', err);
+    }
+    document.body.removeChild(textArea);
 }
 
 function insertCodeBlock(btn) {
@@ -920,7 +955,17 @@ function insertCodeBlock(btn) {
 
     // Insert into editor
     if (window.editor) {
-        const position = window.editor.getPosition();
+        let position = window.editor.getPosition();
+        if (!position) {
+            const model = window.editor.getModel();
+            if (model) {
+                const lineCount = model.getLineCount();
+                const lastLineLength = model.getLineLength(lineCount);
+                position = { lineNumber: lineCount, column: lastLineLength + 1 };
+            } else {
+                position = { lineNumber: 1, column: 1 };
+            }
+        }
         window.editor.executeEdits('sensei-insert', [{
             range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
             text: codeText + '\n'
@@ -951,12 +996,12 @@ function clearChat() {
     initLucide();
 
     // Clear server-side history
-    fetch('http://localhost:8000/chat/clear', { method: 'POST' }).catch(() => {});
+    fetch('/chat/clear', { method: 'POST' }).catch(() => {});
 }
 
 async function loadStarterCode(type) {
     try {
-        const response = await fetch(`http://localhost:8000/starter-code/${type}`);
+        const response = await fetch(`/starter-code/${type}`);
         const data = await response.json();
 
         setEditorCode(data.code);
@@ -969,14 +1014,12 @@ async function loadStarterCode(type) {
 }
 
 function handleQuickAction(action) {
-    const codeContext = getEditorCode();
-
     const actions = {
-        'explain-code': 'Explain this C++ code step by step. What does each part do?\n\n```cpp\n' + codeContext + '\n```',
-        'optimize': 'How can I optimize this C++ code for better performance or readability?\n\n```cpp\n' + codeContext + '\n```',
-        'find-errors': 'Are there any bugs or potential issues in this C++ code? Check for logic errors, memory issues, and edge cases.\n\n```cpp\n' + codeContext + '\n```',
-        'fix-errors': 'Fix any errors in this C++ code and explain what was wrong:\n\n```cpp\n' + codeContext + '\n```',
-        'what-does': 'What does this C++ code do? Give me a brief summary of its purpose and output.\n\n```cpp\n' + codeContext + '\n```',
+        'explain-code': 'Explain this C++ code step by step. What does each part do?',
+        'optimize': 'How can I optimize this C++ code for better performance or readability?',
+        'find-errors': 'Are there any bugs or potential issues in this C++ code? Check for logic errors, memory issues, and edge cases.',
+        'fix-errors': 'Fix any errors in this C++ code and explain what was wrong.',
+        'what-does': 'What does this C++ code do? Give me a brief summary of its purpose and output.',
     };
 
     const message = actions[action];
@@ -1019,7 +1062,9 @@ async function handleRunCode() {
     appendToTerminal('Compiling and running...\n', 'compile-msg');
 
     try {
-        State.socket = new WebSocket('ws://localhost:8000/ws/run');
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsHost = window.location.host || 'localhost:8000';
+        State.socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/run`);
 
         State.socket.onopen = function () {
             State.socket.send(JSON.stringify({ code: code }));
@@ -1067,7 +1112,7 @@ async function triggerErrorDiagnosis(code, errorText) {
     addChatMessage(null, 'ai', loadingId, true);
 
     try {
-        const response = await fetch('http://localhost:8000/diagnose', {
+        const response = await fetch('/diagnose', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code: code, error: errorText })
@@ -1665,7 +1710,7 @@ function handleDownloadCode() {
 
 async function checkServerConnection() {
     try {
-        const response = await fetch('http://localhost:8000/explain', {
+        const response = await fetch('/explain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ line: 'int x;' })
@@ -2028,6 +2073,9 @@ int main() {
 ];
 
 function getEditorCode() {
+    if (State.tabs.size === 0) {
+        return '';
+    }
     if (window.editor) {
         return window.editor.getValue();
     }
