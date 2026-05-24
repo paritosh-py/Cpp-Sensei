@@ -1,0 +1,85 @@
+from logic import SenseiLogic
+
+s = SenseiLogic()
+
+tests = [
+    "// This is a test",
+    "/* block comment */",
+    "/// documentation comment",
+    "#include <vector>",
+    "#include <cmath>",
+    "#include <iostream>",
+    "#include <unknownlib>",
+    '#include "myheader.h"',
+    "int x = 5;",
+    "double pi = 3.14;",
+    "bool isReady = true;",
+    "string name;",
+    "auto val = 42;",
+    "for (int i = 0; i < 10; i++)",
+    "while (x > 0)",
+    "if (x > 5)",
+    "else {",
+    "break;",
+    "continue;",
+    "switch (choice)",
+    "case 1:",
+    "default:",
+    "try {",
+    "catch (exception& e)",
+    "throw runtime_error(\"error\")",
+    "vector<int> v;",
+    "stack<int> s;",
+    "queue<int> q;",
+    "map<string, int> m;",
+    "set<int> s;",
+    "pair<int, int> p;",
+    ".push_back(10)",
+    ".size()",
+    ".empty()",
+    "sort(v.begin(), v.end())",
+    "int main() {",
+    "return 0;",
+    "return result;",
+    "x += 5;",
+    "x++;",
+    "cout << x;",
+    "cin >> x;",
+    "getline(cin, line)",
+    "class Animal",
+    "public:",
+    "private:",
+    "protected:",
+    "virtual void speak()",
+    "override",
+    "static int count;",
+    "this->name",
+    "~Animal()",
+    "enum Color",
+    "enum class Direction",
+    "#define MAX 100",
+    "#ifdef DEBUG",
+    "#endif",
+    "namespace MyApp {",
+    "int* ptr = nullptr",
+    "new int",
+    "delete ptr",
+    "unique_ptr<int>",
+    "ifstream file",
+    "ofstream out",
+    "{",
+    "}",
+    "};",
+    "using namespace std;",
+    "const int MAX = 100;",
+]
+
+for t in tests:
+    result = s.explain_line_structured(t)
+    print(f"INPUT: {t}")
+    print(f"  SUMMARY: {result['summary']}")
+    print(f"  URL: {result['url']}")
+    print("---")
+
+print(f"\nTotal rules: {len(s.rules)}")
+print(f"Total headers in dictionary: {len(s.header_explanations)}")

@@ -708,7 +708,7 @@ async function handleCursorMove() {
 
     if (State.explainTimeout) clearTimeout(State.explainTimeout);
 
-    if (!lineContent || lineContent.startsWith('//') || lineContent.length < 2) {
+    if (!lineContent || lineContent.length < 1) {
         container.innerHTML = `<div class="explain-idle" style="height:auto; padding: 20px;">
             <p>Line ${currentLineNum} — waiting for code...</p>
         </div>`;
