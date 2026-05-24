@@ -22,6 +22,8 @@
 // 1. STATE MANAGEMENT
 // ============================================================================
 
+const API_BASE = window.electronAPI ? 'http://127.0.0.1:8000' : '';
+
 const State = {
     // Editor
     activeTabId: 'untitled-1',
@@ -117,6 +119,17 @@ function initLucide() {
 const FileExplorer = {
     async openFolder() {
         try {
+            if (window.electronAPI) {
+                const result = await window.electronAPI.openFolder();
+                if (result) {
+                    State.workspacePath = result.folderPath;
+                    State.fileTree = result.fileTree;
+                    this.renderTree();
+                    showToast('Workspace', `Opened folder: ${result.folderName}`);
+                }
+                return;
+            }
+
             if ('showDirectoryPicker' in window) {
                 const handle = await window.showDirectoryPicker();
                 State.folderHandle = handle;
@@ -132,6 +145,18 @@ const FileExplorer = {
     },
 
     async readDirectory(dirHandle, depth = 0, parentPath = '') {
+        if (window.electronAPI && State.workspacePath) {
+            try {
+                const fileTree = await window.electronAPI.readDirectory(State.workspacePath);
+                State.fileTree = fileTree;
+                this.renderTree();
+                return fileTree;
+            } catch (e) {
+                showToast('Error', 'Failed to refresh workspace: ' + e.message);
+                return [];
+            }
+        }
+
         const entries = [];
         for await (const entry of dirHandle.values()) {
             if (entry.name.startsWith('.')) continue; // skip hidden files
@@ -174,7 +199,7 @@ const FileExplorer = {
         const container = document.getElementById('fileTree');
         const emptyState = document.getElementById('sidebarEmpty');
 
-        if (State.fileTree.length === 0 && !State.folderHandle) {
+        if (State.fileTree.length === 0 && !State.folderHandle && !State.workspacePath) {
             emptyState.style.display = 'flex';
             return;
         }
@@ -281,7 +306,27 @@ const FileExplorer = {
         }
     },
 
-    async openFileFromTree(item, path) {
+    async openFileFromTree(item, path, name = null) {
+        // Check if already open by matching unique filePath
+        for (const [tabId, tab] of State.tabs) {
+            if (tab.filePath === path) {
+                TabManager.switchTab(tabId);
+                return;
+            }
+        }
+
+        if (window.electronAPI) {
+            try {
+                const content = await window.electronAPI.readFile(path);
+                const tabId = 'file-' + path.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+                const filename = name || (item ? item.querySelector('.file-name').textContent : path.split(/[\\/]/).pop());
+                TabManager.openTab(tabId, filename, content, null, path);
+            } catch (e) {
+                showToast('Error', 'Cannot read file: ' + e.message);
+            }
+            return;
+        }
+
         // Find the file handle using relative path
         const findHandle = (nodes) => {
             for (const node of nodes) {
@@ -296,14 +341,6 @@ const FileExplorer = {
 
         const handle = findHandle(State.fileTree);
         if (!handle) return;
-
-        // Check if already open by matching unique filePath
-        for (const [tabId, tab] of State.tabs) {
-            if (tab.filePath === path) {
-                TabManager.switchTab(tabId);
-                return;
-            }
-        }
 
         try {
             const file = await handle.getFile();
@@ -326,6 +363,22 @@ const FileExplorer = {
     },
 
     async createFile(name) {
+        if (window.electronAPI && State.workspacePath) {
+            try {
+                const fileName = name || 'newfile.cpp';
+                const filePath = await window.electronAPI.joinPath(State.workspacePath, fileName);
+                await window.electronAPI.createFile(filePath);
+                await this.readDirectory();
+                
+                const tabId = 'file-' + filePath.replace(/[^a-zA-Z0-9]/g, '-') + '-' + Date.now();
+                TabManager.openTab(tabId, fileName, '', null, filePath);
+                showToast('Created', `File "${fileName}" created`);
+            } catch (e) {
+                showToast('Error', 'Failed to create file: ' + e.message);
+            }
+            return;
+        }
+
         if (!State.folderHandle) {
             // Create a virtual tab instead
             State.untitledCounter++;
@@ -351,6 +404,19 @@ const FileExplorer = {
     },
 
     async createFolder(name) {
+        if (window.electronAPI && State.workspacePath) {
+            try {
+                const folderName = name || 'new-folder';
+                const folderPath = await window.electronAPI.joinPath(State.workspacePath, folderName);
+                await window.electronAPI.createFolder(folderPath);
+                await this.readDirectory();
+                showToast('Created', `Folder "${folderName}" created`);
+            } catch (e) {
+                showToast('Error', 'Failed to create folder: ' + e.message);
+            }
+            return;
+        }
+
         if (!State.folderHandle) {
             showToast('Info', 'Open a folder first to create subfolders.');
             return;
@@ -721,7 +787,7 @@ async function handleCursorMove() {
         </div>`;
 
         try {
-            const response = await fetch('/explain', {
+            const response = await fetch(API_BASE + '/explain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ line: lineContent })
@@ -789,7 +855,7 @@ async function sendMessage() {
     try {
         // Attach current editor code as context
         const codeContext = getEditorCode();
-        const response = await fetch('/chat', {
+        const response = await fetch(API_BASE + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message, code_context: codeContext })
@@ -845,11 +911,11 @@ function renderMarkdown(text) {
     let html = escapeHtml(text);
 
     // Code blocks (```lang\n...```) — render with header bar
+    const codeBlocks = [];
     html = html.replace(/```(\w*)\s*\r?\n([\s\S]*?)```/g, (match, lang, code) => {
         const langLabel = lang || 'code';
         const trimmedCode = code.trim();
-        const escapedCode = trimmedCode;
-        return `<div class="code-block-wrapper">
+        const blockHtml = `<div class="code-block-wrapper">
             <div class="code-block-header">
                 <span class="code-lang-label">${langLabel}</span>
                 <div class="code-block-actions">
@@ -857,8 +923,10 @@ function renderMarkdown(text) {
                     <button class="code-action-btn insert-btn" onclick="insertCodeBlock(this)" title="Insert into editor"><i data-lucide="file-input"></i> Insert</button>
                 </div>
             </div>
-            <pre><code>${escapedCode}</code></pre>
+            <pre><code>${trimmedCode}</code></pre>
         </div>`;
+        codeBlocks.push(blockHtml);
+        return `\n\n__CODE_BLOCK_PLACEHOLDER_${codeBlocks.length - 1}__\n\n`;
     });
 
     // Inline code
@@ -894,9 +962,14 @@ function renderMarkdown(text) {
     html = html.split('\n\n').map(p => {
         p = p.trim();
         if (!p) return '';
-        if (p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<li') || p.startsWith('<h') || p.includes('code-block-wrapper')) return p;
+        if (p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<li') || p.startsWith('<h') || p.includes('__CODE_BLOCK_PLACEHOLDER_')) return p;
         return `<p>${p.replace(/\n/g, '<br>')}</p>`;
     }).join('');
+
+    // Restore code blocks
+    codeBlocks.forEach((blockHtml, index) => {
+        html = html.replace(new RegExp(`<p>\\s*__CODE_BLOCK_PLACEHOLDER_${index}__\\s*</p>|__CODE_BLOCK_PLACEHOLDER_${index}__`, 'g'), () => blockHtml);
+    });
 
     return html || '<p></p>';
 }
@@ -950,29 +1023,52 @@ function fallbackCopyText(text, callback) {
 
 function insertCodeBlock(btn) {
     const wrapper = btn.closest('.code-block-wrapper');
+    if (!wrapper) return;
     const code = wrapper.querySelector('code');
+    if (!code) return;
     const codeText = code.textContent;
 
     // Insert into editor
     if (window.editor) {
-        let position = window.editor.getPosition();
-        if (!position) {
-            const model = window.editor.getModel();
-            if (model) {
-                const lineCount = model.getLineCount();
-                const lastLineLength = model.getLineLength(lineCount);
-                position = { lineNumber: lineCount, column: lastLineLength + 1 };
-            } else {
-                position = { lineNumber: 1, column: 1 };
+        let range = window.editor.getSelection();
+        if (!range) {
+            let position = window.editor.getPosition();
+            if (!position) {
+                const model = window.editor.getModel();
+                if (model) {
+                    const lineCount = model.getLineCount();
+                    const lastLineLength = model.getLineLength(lineCount);
+                    position = { lineNumber: lineCount, column: lastLineLength + 1 };
+                } else {
+                    position = { lineNumber: 1, column: 1 };
+                }
             }
+            range = {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column
+            };
         }
         window.editor.executeEdits('sensei-insert', [{
-            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            range: range,
             text: codeText + '\n'
         }]);
         window.editor.focus();
     } else {
-        setEditorCode(codeText);
+        const tab = State.tabs.get(State.activeTabId);
+        if (tab) {
+            tab.content = (tab.content || '') + '\n' + codeText;
+            const el = document.getElementById('codeTextarea');
+            if (el) el.value = tab.content;
+            handleEditorInput();
+        }
+    }
+
+    // Keep active tab content in sync directly
+    const activeTab = State.tabs.get(State.activeTabId);
+    if (activeTab) {
+        activeTab.content = getEditorCode();
     }
 
     // Visual feedback
@@ -996,12 +1092,12 @@ function clearChat() {
     initLucide();
 
     // Clear server-side history
-    fetch('/chat/clear', { method: 'POST' }).catch(() => {});
+    fetch(API_BASE + '/chat/clear', { method: 'POST' }).catch(() => {});
 }
 
 async function loadStarterCode(type) {
     try {
-        const response = await fetch(`/starter-code/${type}`);
+        const response = await fetch(API_BASE + `/starter-code/${type}`);
         const data = await response.json();
 
         setEditorCode(data.code);
@@ -1063,7 +1159,7 @@ async function handleRunCode() {
 
     try {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsHost = window.location.host || 'localhost:8000';
+        const wsHost = window.electronAPI ? '127.0.0.1:8000' : (window.location.host || '127.0.0.1:8000');
         State.socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/run`);
 
         State.socket.onopen = function () {
@@ -1112,7 +1208,7 @@ async function triggerErrorDiagnosis(code, errorText) {
     addChatMessage(null, 'ai', loadingId, true);
 
     try {
-        const response = await fetch('/diagnose', {
+        const response = await fetch(API_BASE + '/diagnose', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code: code, error: errorText })
@@ -1516,14 +1612,56 @@ function setupMenuSystem() {
 
     // Context menu actions
     document.querySelectorAll('#contextMenu .context-menu-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
             const action = item.dataset.action;
             const menu = document.getElementById('contextMenu');
+            const targetItem = menu._targetItem;
             menu.classList.remove('active');
 
             if (action === 'new-file') FileExplorer.createFile();
             if (action === 'new-folder') FileExplorer.createFolder();
-            // rename/delete would need the target item reference
+
+            if (targetItem) {
+                const path = targetItem.dataset.path;
+                const kind = targetItem.dataset.kind;
+
+                if (action === 'rename') {
+                    const oldName = targetItem.querySelector('.file-name').textContent;
+                    const newName = prompt('Rename to:', oldName);
+                    if (newName && newName !== oldName) {
+                        if (window.electronAPI) {
+                            try {
+                                const sep = path.includes('/') ? '/' : '\\';
+                                const dir = path.substring(0, path.lastIndexOf(sep));
+                                const newPath = await window.electronAPI.joinPath(dir, newName);
+                                await window.electronAPI.renamePath(path, newPath);
+                                await FileExplorer.readDirectory();
+                                showToast('Renamed', `Renamed to ${newName}`);
+                            } catch (e) {
+                                showToast('Error', 'Failed to rename: ' + e.message);
+                            }
+                        } else {
+                            showToast('Not Supported', 'Rename is only supported in desktop mode.');
+                        }
+                    }
+                }
+
+                if (action === 'delete') {
+                    if (confirm(`Are you sure you want to delete this ${kind}?`)) {
+                        if (window.electronAPI) {
+                            try {
+                                await window.electronAPI.deletePath(path);
+                                await FileExplorer.readDirectory();
+                                showToast('Deleted', `Deleted ${kind}`);
+                            } catch (e) {
+                                showToast('Error', 'Failed to delete: ' + e.message);
+                            }
+                        } else {
+                            showToast('Not Supported', 'Delete is only supported in desktop mode.');
+                        }
+                    }
+                }
+            }
         });
     });
 }
@@ -1576,6 +1714,17 @@ async function saveCurrentFile() {
 
     // Save current textarea content
     tab.content = getEditorCode();
+
+    if (window.electronAPI && tab.filePath) {
+        try {
+            await window.electronAPI.writeFile(tab.filePath, tab.content);
+            TabManager.markClean(State.activeTabId);
+            showToast('Saved', tab.name);
+        } catch (e) {
+            showToast('Error', 'Failed to save: ' + e.message);
+        }
+        return;
+    }
 
     if (tab.fileHandle) {
         try {
@@ -1710,7 +1859,7 @@ function handleDownloadCode() {
 
 async function checkServerConnection() {
     try {
-        const response = await fetch('/explain', {
+        const response = await fetch(API_BASE + '/explain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ line: 'int x;' })
@@ -1829,7 +1978,11 @@ function setupEventListeners() {
         if (name) FileExplorer.createFolder(name);
     });
     document.getElementById('btnRefreshTree')?.addEventListener('click', () => {
-        if (State.folderHandle) FileExplorer.readDirectory(State.folderHandle);
+        if (window.electronAPI && State.workspacePath) {
+            FileExplorer.readDirectory();
+        } else if (State.folderHandle) {
+            FileExplorer.readDirectory(State.folderHandle);
+        }
     });
 
 }

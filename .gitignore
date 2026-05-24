@@ -9,3 +9,11 @@ temp_*.exe
 venv/
 .env
 .vscode/
+
+# Node
+node_modules/
+
+# Electron packaging & build files
+out/
+build/
+dist/

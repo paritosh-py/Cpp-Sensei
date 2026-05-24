@@ -24,13 +24,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files
-app.mount("/public", StaticFiles(directory="public"), name="public")
-app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+# Serve static files if directories exist
+if os.path.exists("public"):
+    app.mount("/public", StaticFiles(directory="public"), name="public")
+if os.path.exists("assets"):
+    app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
 @app.get("/")
 async def serve_index():
-    return FileResponse("index.html")
+    if os.path.exists("index.html"):
+        return FileResponse("index.html")
+    return {"status": "ok", "message": "Sensei Backend Running"}
 
 class ExplanationRequest(BaseModel):
     line: str
